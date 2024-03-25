@@ -1,0 +1,44 @@
+[tool.poetry]
+name = "sqlmodel-filters"
+version = "0.0.0"
+description = "A Lucene query like fliltering for SQLModel"
+authors = ["Manabu Niseki <manabu.niseki@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+luqum = "^0.13"
+sqlmodel = ">=0.0.16,<1.0"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.9"
+pre-commit = "^3.7"
+pytest = "^8.1"
+pytest-pretty = "^1.2"
+pytest-randomly = "^3.15"
+pyupgrade = "^3.15"
+ruff = "^0.3"
+
+[tool.poetry-dynamic-versioning]
+enable = true
+
+[build-system]
+requires = ["poetry-core", "poetry-dynamic-versioning"]
+build-backend = "poetry_dynamic_versioning.backend"
+
+[tool.ruff.lint]
+select = [
+  "B",   # flake8-bugbear
+  "C",   # flake8-comprehensions
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "N",   # pep8-naming
+  "PT",  # flake8-pytest-style
+  "RET", # flake8-return
+  "RUF", # Ruff-specific rules
+  "SIM", # flake8-simplify
+  "T20", # flake8-print
+  "W",   # pycodestyle warnings
+]
