@@ -23,7 +23,7 @@ class Hero(SQLModel, table=True):  # type: ignore
 
 @pytest.fixture()
 def current_date() -> datetime.date:
-    return datetime.datetime.now(datetime.UTC).date()
+    return utcnow().date()
 
 
 @pytest.fixture()
