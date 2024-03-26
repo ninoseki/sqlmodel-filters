@@ -1,9 +1,16 @@
 import datetime
-from functools import partial
+import sys
 
 import pytest
 from sqlalchemy.engine import Engine
 from sqlmodel import Field, Session, SQLModel, create_engine
+
+
+def utcnow():
+    if sys.version_info >= (3, 11):
+        return datetime.datetime.now(datetime.UTC)
+
+    return datetime.datetime.utcnow()
 
 
 class Hero(SQLModel, table=True):  # type: ignore
@@ -11,9 +18,7 @@ class Hero(SQLModel, table=True):  # type: ignore
     name: str
     secret_name: str
     age: int | None = None
-    created_at: datetime.datetime = Field(
-        default_factory=partial(datetime.datetime.now, datetime.UTC)
-    )
+    created_at: datetime.datetime = Field(default_factory=utcnow)
 
 
 @pytest.fixture()
