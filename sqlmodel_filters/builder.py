@@ -19,6 +19,7 @@ from sqlmodel import SQLModel, and_, not_, or_, select
 
 from sqlmodel_filters.exceptions import IllegalFieldError, IllegalFilterError
 
+from .components import LikeWord
 from .utils import cast_by_annotation, dequote
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
@@ -43,18 +44,17 @@ class SearchFilterNodeWrapper:
     def annotation(self) -> type:
         return self.model.model_fields[self.name].annotation  # type: ignore
 
-    def _handle_phrase(self, phrase: Phrase):
+    def _phrase_expression(self, phrase: Phrase):
         yield self.field == cast_by_annotation(dequote(phrase.value), self.annotation)
 
-    def _handle_word(self, word: Word):
+    def _word_expression(self, word: Word):
         casted = cast_by_annotation(word.value, self.annotation)
-
         if isinstance(casted, str):
-            yield self.field.like(f"%{casted}%")
+            yield self.field.like(str(LikeWord(casted)))
         else:
             yield self.field == casted
 
-    def _handle_range(self, range: Range):
+    def _range_expressions(self, range: Range):
         expressions: list[Any] = []
 
         if range.include_high:
@@ -76,14 +76,14 @@ class SearchFilterNodeWrapper:
 
         yield and_(*expressions)
 
-    def _handle_from(self, from_: From):
+    def _from_expression(self, from_: From):
         child: Word = from_.children[0]
         if from_.include:
             yield self.field >= cast_by_annotation(child.value, self.annotation)
         else:
             yield self.field > cast_by_annotation(child.value, self.annotation)
 
-    def _handle_to(self, to: To):
+    def _to_expression(self, to: To):
         child: Word = to.children[0]
         if to.include:
             yield self.field <= cast_by_annotation(child.value, self.annotation)
@@ -93,15 +93,15 @@ class SearchFilterNodeWrapper:
     def get_expressions(self):
         match self.node:
             case Phrase():
-                yield from self._handle_phrase(self.node)
+                yield from self._phrase_expression(self.node)
             case Word():
-                yield from self._handle_word(self.node)
+                yield from self._word_expression(self.node)
             case Range():
-                yield from self._handle_range(self.node)
+                yield from self._range_expressions(self.node)
             case From():
-                yield from self._handle_from(self.node)
+                yield from self._from_expression(self.node)
             case To():
-                yield from self._handle_to(self.node)
+                yield from self._to_expression(self.node)
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 

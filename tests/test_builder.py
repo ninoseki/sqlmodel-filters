@@ -2,7 +2,7 @@ import datetime
 
 import pytest
 from luqum.thread import parse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from sqlmodel_filters import Builder
 
@@ -14,7 +14,7 @@ def builder() -> Builder:
     return Builder(Hero)
 
 
-def test_extract_match(builder: Builder, session: Session):
+def test_equal(builder: Builder, session: Session):
     tree = parse('name:"Spider-Boy"')
     statement = builder(tree)
 
@@ -23,85 +23,81 @@ def test_extract_match(builder: Builder, session: Session):
     assert heros[0].name == "Spider-Boy"
 
 
-def test_like_1(builder: Builder, session: Session):
-    tree = parse("name:Spider")
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Spider", ["Spider-Boy"]),
+        ("name:o*", []),
+        ("name:*o*", ["Deadpond", "Spider-Boy"]),
+        ("name:Deadpon?", ["Deadpond"]),
+        ("name:Deadpond?", []),
+    ],
+)
+def test_like(builder: Builder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
     statement = builder(tree)
 
     heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].name == "Spider-Boy"
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
 
 
-def test_like_2(builder: Builder, session: Session):
-    tree = parse("name:o")
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("age:>47", [48]),
+        ("age:>48", []),
+        ("age:>=48", [48]),
+        ("age:>=49", []),
+    ],
+)
+def test_from(builder: Builder, session: Session, q: str, expected: list[int]):
+    tree = parse(q)
     statement = builder(tree)
 
     heros = session.exec(statement).all()
-    assert len(heros) == 2
-    assert heros[0].name == "Deadpond"
-    assert heros[1].name == "Spider-Boy"
+    assert len(heros) == len(expected)
+    assert [hero.age for hero in heros] == expected
 
 
-def test_from_1(builder: Builder, session: Session):
-    tree = parse("age:>40")
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("age:<49", [48]),
+        ("age:<48", []),
+        ("age:<=48", [48]),
+        ("age:<=47", []),
+    ],
+)
+def test_to(builder: Builder, session: Session, q: str, expected: list[int]):
+    tree = parse(q)
     statement = builder(tree)
 
     heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].age == 48
+    assert len(heros) == len(expected)
+    assert [hero.age for hero in heros] == expected
 
 
-def test_from_2(builder: Builder, session: Session):
-    tree = parse("age:>50")
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("age:[47 TO 50]", [48]),
+        ("age:[48 TO 50]", [48]),
+        ("age:[49 TO 50]", []),
+        ("age:{47 TO 50}", [48]),
+        ("age:{48 TO 50}", []),
+    ],
+)
+def test_range(builder: Builder, session: Session, q: str, expected: list[int]):
+    tree = parse(q)
     statement = builder(tree)
 
     heros = session.exec(statement).all()
-    assert len(heros) == 0
+    assert len(heros) == len(expected)
+    assert [hero.age for hero in heros] == expected
 
 
-def test_to_1(builder: Builder, session: Session):
-    tree = parse("age:<50")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].age == 48
-
-
-def test_to_2(builder: Builder, session: Session):
-    tree = parse("age:<40")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 0
-
-
-def test_range_1(builder: Builder, session: Session):
-    tree = parse("age:[40 TO 50]")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].age == 48
-
-
-def test_range_2(builder: Builder, session: Session):
-    tree = parse("age:[50 TO 60]")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 0
-
-
-def test_range_3(builder: Builder, session: Session):
-    tree = parse("age:{48 TO 60}")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 0
-
-
-def test_range_4(
+def test_range_with_date(
     builder: Builder,
     session: Session,
     tomorrow: datetime.date,
@@ -114,63 +110,91 @@ def test_range_4(
     assert len(heros) == 3
 
 
-def test_and_1(builder: Builder, session: Session):
-    tree = parse("name:Rusty AND age:48")
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Rusty AND age:48", ["Rusty-Man"]),
+        ("name:Rusty AND age:47", []),
+    ],
+)
+def test_and(builder: Builder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
     statement = builder(tree)
 
     heros = session.exec(statement).all()
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Rusty OR age:47", ["Rusty-Man"]),
+        ("name:Foo OR age:48", ["Rusty-Man"]),
+        ("name:Foo OR age:47", []),
+    ],
+)
+def test_or(builder: Builder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Rusty NOT age:47", ["Rusty-Man"]),
+        ("name:Rusty NOT age:48", []),
+    ],
+)
+def test_not(builder: Builder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("(name:Spider OR age:48) OR name:Rusty", ["Spider-Boy", "Rusty-Man"]),
+        ("(name:Spider OR age:48) AND name:Rusty", ["Rusty-Man"]),
+        ("(name:Spider AND age:48) AND name:Rusty", []),
+    ],
+)
+def test_group(builder: Builder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
+
+
+def test_casting_1(builder: Builder, session: Session):
+    hero = session.exec(select(Hero)).first()
+    assert hero is not None
+
+    q = f"created_at:{hero.created_at.isoformat()}"
+
+    tree = parse(q)
+    statement = builder(tree)
+    heros = session.exec(statement).all()
+
     assert len(heros) == 1
-    assert heros[0].age == 48
+    assert heros[0].id == hero.id
 
 
-def test_and_2(builder: Builder, session: Session):
-    tree = parse("name:Rusty AND age:50")
+def test_idempotency(builder: Builder):
+    tree = parse('name:"Spider-Boy"')
     statement = builder(tree)
 
-    heros = session.exec(statement).all()
-    assert len(heros) == 0
-
-
-def test_or_1(builder: Builder, session: Session):
-    tree = parse("name:Rusty OR age:50")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].name == "Rusty-Man"
-
-
-def test_or_2(builder: Builder, session: Session):
-    tree = parse("name:Foo OR age:48")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].age == 48
-
-
-def test_group_1(builder: Builder, session: Session):
-    tree = parse("(name:Spider OR age:48) OR name:Rusty")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 2
-    assert heros[0].name == "Spider-Boy"
-    assert heros[1].name == "Rusty-Man"
-
-
-def test_group_2(builder: Builder, session: Session):
-    tree = parse("(name:Spider OR age:48) AND name:Rusty")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 1
-    assert heros[0].name == "Rusty-Man"
-
-
-def test_group_3(builder: Builder, session: Session):
-    tree = parse("(name:Spider AND age:48) AND name:Rusty")
-    statement = builder(tree)
-
-    heros = session.exec(statement).all()
-    assert len(heros) == 0
+    # builder should be idempotence
+    for _ in range(10):
+        another = builder(tree)
+        assert str(statement) == str(another)
