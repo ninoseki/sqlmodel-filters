@@ -1,5 +1,8 @@
 # sqlmodel-filters
 
+[![PyPI version](https://badge.fury.io/py/sqlmodel-filters.svg)](https://badge.fury.io/py/sqlmodel-filters)
+[![Test](https://github.com/ninoseki/sqlmodel-filters/actions/workflows/test.yml/badge.svg)](https://github.com/ninoseki/sqlmodel-filters/actions/workflows/test.yml)
+
 A Lucene query like filter for [SQLModel](https://github.com/tiangolo/sqlmodel).
 
 > [!NOTE]
@@ -8,7 +11,7 @@ A Lucene query like filter for [SQLModel](https://github.com/tiangolo/sqlmodel).
 ## Installation
 
 ```bash
-pip install sqlmodel_filters
+pip install sqlmodel-filters
 ```
 
 ## How to Use
@@ -76,7 +79,7 @@ assert len(heros) == 1
 assert heros[0].name == "Spider-Boy"
 ```
 
-Note that a value is automatically casted based on a field definition.
+Note that a value is automatically casted based on a field of the model.
 
 ```py
 # age: Optional[int]
@@ -142,7 +145,7 @@ Use `?` (a single character wildcard) or `*` (a multiple character wildcard) to 
 >>> WHERE hero.age <= 60 AND hero.age >= 48
 ```
 
-## `AND`, `OR`, `NOT` and `GROUP` (Grouping)
+### `AND`, `OR`, `NOT` and `GROUP` (Grouping)
 
 ```py
 "name:Rusty AND age:48"
