@@ -112,13 +112,13 @@ class Builder(TreeVisitor):
 
         self.model = model
         self.expressions: list[Any] = []
-        self.processed: set[int] = set()
+        self._analyzed_positions: set[int] = set()
 
     def get_search_fields_expressions(self, node: SearchField):
-        if (node.pos or -1) in self.processed:
+        if (node.pos or -1) in self._analyzed_positions:
             return
 
-        self.processed.add(node.pos or -1)
+        self._analyzed_positions.add(node.pos or -1)
         for child in node.children:
             wrapper = SearchFilterNodeWrapper(child, model=self.model, name=node.name)
             yield from wrapper.get_expressions()
@@ -181,6 +181,13 @@ class Builder(TreeVisitor):
         self.expressions.extend(list(self._handle_or_operation(node)))
         yield from super().generic_visit(node, context)
 
-    def __call__(self, tree: Item):
+    def __call__(
+        self,
+        tree: Item,
+    ):
+        # NOTE: initialize expressions and _processed_positions to ensure idempotency
+        self.expressions = []
+        self._analyzed_positions = set()
+
         self.visit(tree)
         return select(self.model).where(*self.expressions)

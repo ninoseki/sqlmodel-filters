@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from sqlmodel_filters import Builder
 
 from .conftest import Hero
+from .utils import compile_with_literal_binds
 
 
 @pytest.fixture()
@@ -190,11 +191,29 @@ def test_casting_1(builder: Builder, session: Session):
     assert heros[0].id == hero.id
 
 
-def test_idempotency(builder: Builder):
-    tree = parse('name:"Spider-Boy"')
-    statement = builder(tree)
+def normalize(s: str):
+    lines = [line.strip() for line in s.splitlines()]
+    return "\n".join(lines).strip()
 
-    # builder should be idempotence
-    for _ in range(10):
-        another = builder(tree)
-        assert str(statement) == str(another)
+
+def test_idempotency():
+    builder = Builder(Hero)
+
+    statement_1 = builder(parse("name:foo"))
+
+    assert normalize(str(compile_with_literal_binds(statement_1))) == normalize(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        FROM hero
+        WHERE hero.name LIKE '%foo%'
+        """
+    )
+
+    statement_2 = builder(parse("name:bar"))
+    assert normalize(str(compile_with_literal_binds(statement_2))) == normalize(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        FROM hero
+        WHERE hero.name LIKE '%bar%'
+        """
+    )
