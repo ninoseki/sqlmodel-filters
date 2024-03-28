@@ -59,12 +59,12 @@ And let's try querying with this library.
 from luqum import parse
 from sqlmodel import Session
 
-from sqlmodel_filters import Builder
+from sqlmodel_filters import SelectBuilder
 
 # parse a Lucene query
 parsed = parse('name:Spider')
 # build SELECT statement for Hero based on the parsed query
-builder = Builder(Hero)
+builder = SelectBuilder(Hero)
 statement = builder(parsed)
 
 # the following is a compiled SQL query
@@ -161,7 +161,33 @@ Use `?` (a single character wildcard) or `*` (a multiple character wildcard) to 
 >>> WHERE (hero.name LIKE '%Spider%' OR hero.age = 48) AND hero.name LIKE '%Rusty%'
 ```
 
+## Tips
+
+### Selecting Columns
+
+You can select columns by specifying `entities`.
+
+```py
+tree = parse("name:*")
+statement = builder(tree, entities=(Hero.id, Hero.name))
+
+session.exec(statement).all()
+>>> [(1, "Deadpond"), (2, "Spider-Boy"), (3, "Rusty-Man")]
+```
+
+### Function
+
+Also you can use a function such as `count`.
+
+```py
+tree = parse("name:*")
+statement = builder(tree, entities=func.count(Hero.id))
+
+session.scalar(statement)
+>>> 3
+```
+
 ## Known Limitations / Todos
 
 - Relationship join is not supported
-- Filed Grouping is not supported
+- Field Grouping is not supported
