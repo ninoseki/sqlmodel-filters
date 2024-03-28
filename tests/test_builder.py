@@ -2,20 +2,20 @@ import datetime
 
 import pytest
 from luqum.thread import parse
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
-from sqlmodel_filters import Builder
+from sqlmodel_filters import SelectBuilder
 
 from .conftest import Hero
-from .utils import compile_with_literal_binds
+from .utils import compile_with_literal_binds, normalize_multiline_string
 
 
 @pytest.fixture()
-def builder() -> Builder:
-    return Builder(Hero)
+def builder() -> SelectBuilder:
+    return SelectBuilder(Hero)
 
 
-def test_equal(builder: Builder, session: Session):
+def test_equal(builder: SelectBuilder, session: Session):
     tree = parse('name:"Spider-Boy"')
     statement = builder(tree)
 
@@ -34,7 +34,7 @@ def test_equal(builder: Builder, session: Session):
         ("name:Deadpond?", []),
     ],
 )
-def test_like(builder: Builder, session: Session, q: str, expected: list[str]):
+def test_like(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -52,7 +52,7 @@ def test_like(builder: Builder, session: Session, q: str, expected: list[str]):
         ("age:>=49", []),
     ],
 )
-def test_from(builder: Builder, session: Session, q: str, expected: list[int]):
+def test_from(builder: SelectBuilder, session: Session, q: str, expected: list[int]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -70,7 +70,7 @@ def test_from(builder: Builder, session: Session, q: str, expected: list[int]):
         ("age:<=47", []),
     ],
 )
-def test_to(builder: Builder, session: Session, q: str, expected: list[int]):
+def test_to(builder: SelectBuilder, session: Session, q: str, expected: list[int]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -89,7 +89,7 @@ def test_to(builder: Builder, session: Session, q: str, expected: list[int]):
         ("age:{48 TO 50}", []),
     ],
 )
-def test_range(builder: Builder, session: Session, q: str, expected: list[int]):
+def test_range(builder: SelectBuilder, session: Session, q: str, expected: list[int]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -99,7 +99,7 @@ def test_range(builder: Builder, session: Session, q: str, expected: list[int]):
 
 
 def test_range_with_date(
-    builder: Builder,
+    builder: SelectBuilder,
     session: Session,
     tomorrow: datetime.date,
     yesterday: datetime.date,
@@ -118,7 +118,7 @@ def test_range_with_date(
         ("name:Rusty AND age:47", []),
     ],
 )
-def test_and(builder: Builder, session: Session, q: str, expected: list[str]):
+def test_and(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -135,7 +135,7 @@ def test_and(builder: Builder, session: Session, q: str, expected: list[str]):
         ("name:Foo OR age:47", []),
     ],
 )
-def test_or(builder: Builder, session: Session, q: str, expected: list[str]):
+def test_or(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -151,7 +151,7 @@ def test_or(builder: Builder, session: Session, q: str, expected: list[str]):
         ("name:Rusty NOT age:48", []),
     ],
 )
-def test_not(builder: Builder, session: Session, q: str, expected: list[str]):
+def test_not(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -168,7 +168,7 @@ def test_not(builder: Builder, session: Session, q: str, expected: list[str]):
         ("(name:Spider AND age:48) AND name:Rusty", []),
     ],
 )
-def test_group(builder: Builder, session: Session, q: str, expected: list[str]):
+def test_group(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
     tree = parse(q)
     statement = builder(tree)
 
@@ -177,12 +177,11 @@ def test_group(builder: Builder, session: Session, q: str, expected: list[str]):
     assert [hero.name for hero in heros] == expected
 
 
-def test_casting_1(builder: Builder, session: Session):
+def test_casting_1(builder: SelectBuilder, session: Session):
     hero = session.exec(select(Hero)).first()
     assert hero is not None
 
     q = f"created_at:{hero.created_at.isoformat()}"
-
     tree = parse(q)
     statement = builder(tree)
     heros = session.exec(statement).all()
@@ -191,17 +190,12 @@ def test_casting_1(builder: Builder, session: Session):
     assert heros[0].id == hero.id
 
 
-def normalize(s: str):
-    lines = [line.strip() for line in s.splitlines()]
-    return "\n".join(lines).strip()
-
-
-def test_idempotency():
-    builder = Builder(Hero)
-
+def test_idempotency(builder: SelectBuilder):
     statement_1 = builder(parse("name:foo"))
 
-    assert normalize(str(compile_with_literal_binds(statement_1))) == normalize(
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement_1))  # type: ignore
+    ) == normalize_multiline_string(
         """
         SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
         FROM hero
@@ -210,10 +204,36 @@ def test_idempotency():
     )
 
     statement_2 = builder(parse("name:bar"))
-    assert normalize(str(compile_with_literal_binds(statement_2))) == normalize(
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement_2))  # type: ignore
+    ) == normalize_multiline_string(
         """
         SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
         FROM hero
         WHERE hero.name LIKE '%bar%'
         """
     )
+
+
+def test_entity_1(builder: SelectBuilder, session: Session):
+    tree = parse("name:*")
+    statement = builder(tree, entities=Hero.id)
+
+    results = session.exec(statement).all()
+    assert results == [1, 2, 3]
+
+
+def test_entity_2(builder: SelectBuilder, session: Session):
+    tree = parse("name:*")
+    statement = builder(tree, entities=(Hero.id, Hero.name))
+
+    results = session.exec(statement).all()
+    assert results == [(1, "Deadpond"), (2, "Spider-Boy"), (3, "Rusty-Man")]
+
+
+def test_entity_3(builder: SelectBuilder, session: Session):
+    tree = parse("name:*")
+    statement = builder(tree, entities=func.count(Hero.id))  # type: ignore
+
+    count = session.scalar(statement)
+    assert count == 3  # type: ignore

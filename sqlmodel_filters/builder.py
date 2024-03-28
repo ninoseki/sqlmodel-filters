@@ -15,7 +15,9 @@ from luqum.tree import (
     Word,
 )
 from luqum.visitor import TreeVisitor
+from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
+from sqlmodel.sql.expression import Select, SelectOfScalar
 
 from sqlmodel_filters.exceptions import IllegalFieldError, IllegalFilterError
 
@@ -36,9 +38,7 @@ class SearchFilterNodeWrapper:
         try:
             return getattr(self.model, self.name)
         except AttributeError as e:
-            raise IllegalFieldError(
-                f"{self.model.__class__} does not have field:{self.name}"
-            ) from e
+            raise IllegalFieldError(f"{self.model.__class__} does not have field:{self.name}") from e
 
     @property
     def annotation(self) -> type:
@@ -55,24 +55,16 @@ class SearchFilterNodeWrapper:
             yield self.field == casted
 
     def _range_expressions(self, range: Range):
-        expressions: list[Any] = []
+        expressions: list[_ColumnExpressionArgument] = []
 
         if range.include_high:
-            expressions.append(
-                self.field <= cast_by_annotation(range.high.value, self.annotation)
-            )
+            expressions.append(self.field <= cast_by_annotation(range.high.value, self.annotation))
         else:
-            expressions.append(
-                self.field < cast_by_annotation(range.high.value, self.annotation)
-            )
+            expressions.append(self.field < cast_by_annotation(range.high.value, self.annotation))
         if range.include_low:
-            expressions.append(
-                self.field >= cast_by_annotation(range.low.value, self.annotation)
-            )
+            expressions.append(self.field >= cast_by_annotation(range.low.value, self.annotation))
         else:
-            expressions.append(
-                self.field > cast_by_annotation(range.low.value, self.annotation)
-            )
+            expressions.append(self.field > cast_by_annotation(range.low.value, self.annotation))
 
         yield and_(*expressions)
 
@@ -106,12 +98,12 @@ class SearchFilterNodeWrapper:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
 
-class Builder(TreeVisitor):
+class ExpressionsBuilder(TreeVisitor):
     def __init__(self, model: type[ModelType]):
         super().__init__()
 
         self.model = model
-        self.expressions: list[Any] = []
+        self.expressions: list[_ColumnExpressionArgument] = []
         self._analyzed_positions: set[int] = set()
 
     def get_search_fields_expressions(self, node: SearchField):
@@ -181,13 +173,31 @@ class Builder(TreeVisitor):
         self.expressions.extend(list(self._handle_or_operation(node)))
         yield from super().generic_visit(node, context)
 
-    def __call__(
-        self,
-        tree: Item,
-    ):
+    def __call__(self, tree: Item):
         # NOTE: initialize expressions and _processed_positions to ensure idempotency
         self.expressions = []
         self._analyzed_positions = set()
-
         self.visit(tree)
-        return select(self.model).where(*self.expressions)
+        return self.expressions
+
+
+class SelectBuilder(ExpressionsBuilder):
+    def __call__(self, tree: Item, *, entities: Any = None) -> Select | SelectOfScalar:
+        """Build a SELECT statement.
+
+        Args:
+            tree (Item): A Luqum tree. (A parsed Lucene query)
+            entities (Any, optional): Entities given to `select` function. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
+        super().__call__(tree)
+
+        if entities is None:
+            entities = self.model
+
+        if isinstance(entities, (tuple, list)):
+            return select(*entities).where(*self.expressions)
+
+        return select(entities).where(*self.expressions)
