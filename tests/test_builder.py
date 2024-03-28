@@ -24,6 +24,20 @@ def test_equal(builder: SelectBuilder, session: Session):
     assert heros[0].name == "Spider-Boy"
 
 
+def test_is_not_null(builder: SelectBuilder):
+    statement = builder(parse("name:*"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        FROM hero
+        WHERE hero.name IS NOT NULL
+        """
+    )
+
+
 @pytest.mark.parametrize(
     ("q", "expected"),
     [

@@ -15,6 +15,7 @@ from luqum.tree import (
     Word,
 )
 from luqum.visitor import TreeVisitor
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
 from sqlmodel.sql.expression import Select, SelectOfScalar
@@ -34,7 +35,7 @@ class SearchFilterNodeWrapper:
         self.model = model
 
     @property
-    def field(self):
+    def field(self) -> InstrumentedAttribute:
         try:
             return getattr(self.model, self.name)
         except AttributeError as e:
@@ -50,7 +51,11 @@ class SearchFilterNodeWrapper:
     def _word_expression(self, word: Word):
         casted = cast_by_annotation(word.value, self.annotation)
         if isinstance(casted, str):
-            yield self.field.like(str(LikeWord(casted)))
+            l_word = LikeWord(casted)
+            if l_word.is_wildcard:
+                yield self.field.isnot(None)
+            else:
+                yield self.field.like(str(LikeWord(casted)))
         else:
             yield self.field == casted
 
