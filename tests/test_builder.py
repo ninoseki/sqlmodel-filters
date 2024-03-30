@@ -2,16 +2,16 @@ import datetime
 
 import pytest
 from luqum.thread import parse
-from sqlmodel import Session, func, select
+from sqlmodel import Session, distinct, func, select
 
 from sqlmodel_filters import SelectBuilder
 
-from .conftest import Hero
+from .models import Headquarter, Hero, Team
 from .utils import compile_with_literal_binds, normalize_multiline_string
 
 
 @pytest.fixture()
-def builder() -> SelectBuilder:
+def builder():
     return SelectBuilder(Hero)
 
 
@@ -31,7 +31,7 @@ def test_is_not_null(builder: SelectBuilder):
         str(compile_with_literal_binds(statement))  # type: ignore
     ) == normalize_multiline_string(
         """
-        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
         FROM hero
         WHERE hero.name IS NOT NULL
         """
@@ -191,7 +191,7 @@ def test_group(builder: SelectBuilder, session: Session, q: str, expected: list[
     assert [hero.name for hero in heros] == expected
 
 
-def test_casting_1(builder: SelectBuilder, session: Session):
+def test_casting(builder: SelectBuilder, session: Session):
     hero = session.exec(select(Hero)).first()
     assert hero is not None
 
@@ -211,7 +211,7 @@ def test_idempotency(builder: SelectBuilder):
         str(compile_with_literal_binds(statement_1))  # type: ignore
     ) == normalize_multiline_string(
         """
-        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
         FROM hero
         WHERE hero.name LIKE '%foo%'
         """
@@ -222,7 +222,7 @@ def test_idempotency(builder: SelectBuilder):
         str(compile_with_literal_binds(statement_2))  # type: ignore
     ) == normalize_multiline_string(
         """
-        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
         FROM hero
         WHERE hero.name LIKE '%bar%'
         """
@@ -251,3 +251,61 @@ def test_entity_3(builder: SelectBuilder, session: Session):
 
     count = session.scalar(statement)
     assert count == 3  # type: ignore
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("team.name:Preventers", ["Spider-Boy", "Rusty-Man"]),
+        ("team.name:Z-Force", ["Deadpond"]),
+        ("team.name:Preventers AND name:Spider", ["Spider-Boy"]),
+        ("team.name:Preventers OR name:Spider", ["Spider-Boy", "Rusty-Man"]),
+        ('team.name:Z-Force AND team.headquarter.name:"Sister Margaret\'s Bar"', ["Deadpond"]),
+        ('team.name:Z-Force AND team.headquarter.name:"Sharp Tower"', []),
+    ],
+)
+def test_relationships(q: str, expected: list[str], session: Session):
+    tree = parse(q)
+    builder = SelectBuilder(Hero, relationships={"team": Team, "headquarter": Headquarter})
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert [hero.name for hero in heros] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Preventers", ["Preventers"]),
+        ("heros.name:Spider", ["Preventers"]),
+        ("heros.name:Deadpond", ["Z-Force"]),
+        ("heros.name:Deadpond AND headquarter.name:Sharp", []),
+        ("heros.name:Deadpond AND headquarter.name:Sister", ["Z-Force"]),
+    ],
+)
+def test_relationships_2(q: str, expected: list[str], session: Session):
+    tree = parse(q)
+    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
+    statement = builder(tree)
+    statement = statement.group_by(Team.id)
+
+    teams = session.exec(statement).all()
+    assert [team.name for team in teams] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("name:Preventers", 1),
+        ("heros.name:Deadpond AND headquarter.name:Sharp", 0),
+        ("heros.name:Deadpond AND headquarter.name:Sister", 1),
+    ],
+)
+def test_relationships_3(q: str, expected: int, session: Session):
+    tree = parse(q)
+    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
+    statement = builder(tree, entities=[func.count(distinct(Team.id))])  # type: ignore
+    statement = statement.group_by(Team.id)
+
+    count = session.scalar(statement)
+    assert (count or 0) == expected  # type: ignore
