@@ -1,113 +1,34 @@
+from types import MappingProxyType
 from typing import Any, TypeVar
 
 from luqum.tree import (
     AndOperation,
-    From,
     Group,
     Item,
     Not,
     OrOperation,
-    Phrase,
-    Range,
     SearchField,
-    To,
     UnknownOperation,
-    Word,
 )
 from luqum.visitor import TreeVisitor
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
-from sqlmodel_filters.exceptions import IllegalFieldError, IllegalFilterError
+from sqlmodel_filters.exceptions import IllegalFilterError
 
-from .components import LikeWord
-from .utils import cast_by_annotation, dequote
+from .components import SearchFieldNode
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
 
-class SearchFilterNodeWrapper:
-    def __init__(self, node: Item, *, model: type[ModelType], name: str):
-        self.node = node
-        self.name = name
-        self.model = model
-
-    @property
-    def field(self) -> InstrumentedAttribute:
-        try:
-            return getattr(self.model, self.name)
-        except AttributeError as e:
-            raise IllegalFieldError(f"{self.model.__class__} does not have field:{self.name}") from e
-
-    @property
-    def annotation(self) -> type:
-        return self.model.model_fields[self.name].annotation  # type: ignore
-
-    def _phrase_expression(self, phrase: Phrase):
-        yield self.field == cast_by_annotation(dequote(phrase.value), self.annotation)
-
-    def _word_expression(self, word: Word):
-        casted = cast_by_annotation(word.value, self.annotation)
-        if isinstance(casted, str):
-            l_word = LikeWord(casted)
-            if l_word.is_wildcard:
-                yield self.field.isnot(None)
-            else:
-                yield self.field.like(str(LikeWord(casted)))
-        else:
-            yield self.field == casted
-
-    def _range_expressions(self, range: Range):
-        expressions: list[_ColumnExpressionArgument] = []
-
-        if range.include_high:
-            expressions.append(self.field <= cast_by_annotation(range.high.value, self.annotation))
-        else:
-            expressions.append(self.field < cast_by_annotation(range.high.value, self.annotation))
-        if range.include_low:
-            expressions.append(self.field >= cast_by_annotation(range.low.value, self.annotation))
-        else:
-            expressions.append(self.field > cast_by_annotation(range.low.value, self.annotation))
-
-        yield and_(*expressions)
-
-    def _from_expression(self, from_: From):
-        child: Word = from_.children[0]
-        if from_.include:
-            yield self.field >= cast_by_annotation(child.value, self.annotation)
-        else:
-            yield self.field > cast_by_annotation(child.value, self.annotation)
-
-    def _to_expression(self, to: To):
-        child: Word = to.children[0]
-        if to.include:
-            yield self.field <= cast_by_annotation(child.value, self.annotation)
-        else:
-            yield self.field < cast_by_annotation(child.value, self.annotation)
-
-    def get_expressions(self):
-        match self.node:
-            case Phrase():
-                yield from self._phrase_expression(self.node)
-            case Word():
-                yield from self._word_expression(self.node)
-            case Range():
-                yield from self._range_expressions(self.node)
-            case From():
-                yield from self._from_expression(self.node)
-            case To():
-                yield from self._to_expression(self.node)
-            case unknown:
-                raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
-
-
 class ExpressionsBuilder(TreeVisitor):
-    def __init__(self, model: type[ModelType]):
+    def __init__(self, model: type[ModelType], *, relationships: dict[str, type[ModelType]] | None = None):
         super().__init__()
 
         self.model = model
+        self.relationships = MappingProxyType(relationships or {})
+
         self.expressions: list[_ColumnExpressionArgument] = []
         self._analyzed_positions: set[int] = set()
 
@@ -117,7 +38,7 @@ class ExpressionsBuilder(TreeVisitor):
 
         self._analyzed_positions.add(node.pos or -1)
         for child in node.children:
-            wrapper = SearchFilterNodeWrapper(child, model=self.model, name=node.name)
+            wrapper = SearchFieldNode(child, model=self.model, name=node.name, relationships=self.relationships)
             yield from wrapper.get_expressions()
 
     def get_expressions(self, node: Item):
@@ -202,7 +123,9 @@ class SelectBuilder(ExpressionsBuilder):
         if entities is None:
             entities = self.model
 
-        if isinstance(entities, (tuple, list)):
-            return select(*entities).where(*self.expressions)
+        s = select(*entities) if isinstance(entities, (tuple, list)) else select(entities)
 
-        return select(entities).where(*self.expressions)
+        for join in self.relationships.values():
+            s = s.join(join)
+
+        return s.where(*self.expressions)
