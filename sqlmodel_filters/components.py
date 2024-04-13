@@ -1,20 +1,13 @@
 from types import MappingProxyType
 from typing import TypeVar
 
-from luqum.tree import (
-    From,
-    Item,
-    Phrase,
-    Range,
-    To,
-    Word,
-)
+from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_
 
 from .exceptions import IllegalFieldError, IllegalFilterError
-from .utils import cast_by_annotation, dequote
+from .utils import cast_by_annotation, dequote, deslash
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
@@ -140,6 +133,7 @@ class SearchFieldNode:
             expressions.append(self.field <= cast_by_annotation(range.high.value, self.annotation))
         else:
             expressions.append(self.field < cast_by_annotation(range.high.value, self.annotation))
+
         if range.include_low:
             expressions.append(self.field >= cast_by_annotation(range.low.value, self.annotation))
         else:
@@ -161,6 +155,9 @@ class SearchFieldNode:
         else:
             yield self.field < cast_by_annotation(child.value, self.annotation)
 
+    def _regex_expression(self, regex: Regex):
+        yield self.field.regexp_match(deslash(regex.value))
+
     def get_expressions(self):
         match self.node:
             case Phrase():
@@ -173,5 +170,7 @@ class SearchFieldNode:
                 yield from self._from_expression(self.node)
             case To():
                 yield from self._to_expression(self.node)
+            case Regex():
+                yield from self._regex_expression(self.node)
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")

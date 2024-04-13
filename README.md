@@ -128,13 +128,22 @@ A value is automatically casted based on a field of a model.
 - Use `?` (a single character wildcard) or `*` (a multiple character wildcard) to control a LIKE operator pattern.
 - `*` is converted as `IS NOT NULL`.
 
-| Query               | SQL (Where Clause)                 |
-| ------------------- | ---------------------------------- |
-| `name:"Spider-Boy"` | `WHERE hero.name = 'Spider-Boy'`   |
-| `name:Spider`       | `WHERE hero.name LIKE '%Spider%'`  |
-| `name:Deadpond?`    | `WHERE hero.name LIKE 'Deadpond_'` |
-| `name:o*`           | `WHERE hero.name LIKE 'o%'`        |
-| `name:*`            | `WHERE hero.name IS NOT NULL`      |
+| Query              | SQL (Where Clause)                 |
+| ------------------ | ---------------------------------- |
+| `name:Spider-Boy"` | `WHERE hero.name = 'Spider-Boy'`   |
+| `name:Spider`      | `WHERE hero.name LIKE '%Spider%'`  |
+| `name:Deadpond?`   | `WHERE hero.name LIKE 'Deadpond_'` |
+| `name:o*`          | `WHERE hero.name LIKE 'o%'`        |
+| `name:*`           | `WHERE hero.name IS NOT NULL`      |
+
+### `REGEX`
+
+| Query               | SQL (Where Clause)                      |
+| ------------------- | --------------------------------------- |
+| `name:/Spider?Boy/` | `WHERE hero.name <regexp> 'Spider?Boy'` |
+
+> [!NOTE]
+> Regex support works differently per backend. See [SQLAlchemy docs](https://docs.sqlalchemy.org/en/20/core/sqlelement.html#sqlalchemy.sql.expression.ColumnElement.regexp_match) for details.
 
 ### `FROM` & `TO`
 

@@ -41,6 +41,24 @@ def test_is_not_null(builder: SelectBuilder):
 @pytest.mark.parametrize(
     ("q", "expected"),
     [
+        ("name:/Spider/", ["Spider-Boy"]),
+        ("name:/Spider?Boy/", []),
+        ("name:/Spider.Boy/", ["Spider-Boy"]),
+        ("name:/Spider.$/", []),
+    ],
+)
+def test_regex(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == len(expected)
+    assert [hero.name for hero in heros] == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
         ("name:Spider", ["Spider-Boy"]),
         ("name:o*", []),
         ("name:*o*", ["Deadpond", "Spider-Boy"]),

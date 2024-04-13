@@ -1,15 +1,7 @@
 from types import MappingProxyType
 from typing import Any, TypeVar
 
-from luqum.tree import (
-    AndOperation,
-    Group,
-    Item,
-    Not,
-    OrOperation,
-    SearchField,
-    UnknownOperation,
-)
+from luqum.tree import AndOperation, Group, Item, Not, OrOperation, SearchField, UnknownOperation
 from luqum.visitor import TreeVisitor
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
@@ -32,7 +24,24 @@ class ExpressionsBuilder(TreeVisitor):
         self.expressions: list[_ColumnExpressionArgument] = []
         self._analyzed_positions: set[int] = set()
 
-    def get_search_fields_expressions(self, node: SearchField):
+    def get_expressions(self, node: Item):
+        match node:
+            case SearchField():
+                yield from self._handel_search_field(node)
+            case Not():
+                search_field = node.children[0]
+                for condition in self._handel_search_field(search_field):
+                    yield not_(condition)
+            case Group():
+                yield from self._handle_group(node)
+            case AndOperation():
+                yield from self._handle_and_operation(node)
+            case OrOperation():
+                yield from self._handle_or_operation(node)
+            case unknown:
+                raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
+
+    def _handel_search_field(self, node: SearchField):
         if (node.pos or -1) in self._analyzed_positions:
             return
 
@@ -41,28 +50,13 @@ class ExpressionsBuilder(TreeVisitor):
             wrapper = SearchFieldNode(child, model=self.model, name=node.name, relationships=self.relationships)
             yield from wrapper.get_expressions()
 
-    def get_expressions(self, node: Item):
-        match node:
-            case SearchField():
-                yield from self.get_search_fields_expressions(node)
-            case Not():
-                search_field = node.children[0]
-                for condition in self.get_search_fields_expressions(search_field):
-                    yield not_(condition)
-            case AndOperation():
-                yield from self._handle_and_operation(node)
-            case OrOperation():
-                yield from self._handle_or_operation(node)
-            case Group():
-                expressions = []
-                for child in node.children:
-                    expressions.extend(list(self.get_expressions(child)))
+    def visit_search_field(self, node: SearchField, context: dict):
+        self.expressions.extend(list(self.get_expressions(node)))
+        yield from super().generic_visit(node, context)
 
-                if len(expressions) > 0:
-                    yield and_(*expressions)
-
-            case unknown:
-                raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
+    def _handle_group(self, node: Group):
+        # NOTE: group can be processed as And operation
+        yield from self._handle_and_operation(node)  # type: ignore
 
     def _handle_and_operation(self, node: AndOperation):
         expressions: list[Any] = []
@@ -71,16 +65,6 @@ class ExpressionsBuilder(TreeVisitor):
 
         if len(expressions) > 0:
             yield and_(*expressions)
-
-    def visit_search_field(self, node: SearchField, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
-        yield from super().generic_visit(node, context)
-
-    def visit_unknown_operation(self, node: UnknownOperation, context: dict):
-        for child in node.children:
-            self.expressions.extend(list(self.get_expressions(child)))
-
-        yield from super().generic_visit(node, context)
 
     def visit_and_operation(self, node: AndOperation, context: dict):
         self.expressions.extend(list(self._handle_and_operation(node)))
@@ -97,6 +81,12 @@ class ExpressionsBuilder(TreeVisitor):
 
     def visit_or_operation(self, node: OrOperation, context: dict):
         self.expressions.extend(list(self._handle_or_operation(node)))
+        yield from super().generic_visit(node, context)
+
+    def visit_unknown_operation(self, node: UnknownOperation, context: dict):
+        for child in node.children:
+            self.expressions.extend(list(self.get_expressions(child)))
+
         yield from super().generic_visit(node, context)
 
     def __call__(self, tree: Item):
