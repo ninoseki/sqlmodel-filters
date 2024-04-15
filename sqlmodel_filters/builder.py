@@ -30,8 +30,8 @@ class ExpressionsBuilder(TreeVisitor):
                 yield from self._handel_search_field(node)
             case Not():
                 search_field = node.children[0]
-                for condition in self._handel_search_field(search_field):
-                    yield not_(condition)
+                expressions = self.get_expressions(search_field)
+                yield not_(*expressions)
             case Group():
                 yield from self._handle_group(node)
             case AndOperation():
@@ -59,7 +59,7 @@ class ExpressionsBuilder(TreeVisitor):
         yield from self._handle_and_operation(node)  # type: ignore
 
     def _handle_and_operation(self, node: AndOperation):
-        expressions: list[Any] = []
+        expressions: list[_ColumnExpressionArgument] = []
         for child in node.children:
             expressions.extend(list(self.get_expressions(child)))
 
@@ -71,7 +71,7 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_or_operation(self, node: OrOperation):
-        expressions: list[Any] = []
+        expressions: list[_ColumnExpressionArgument] = []
         for child in node.children:
             expressions.extend(list(self.get_expressions(child)))
 
@@ -81,6 +81,18 @@ class ExpressionsBuilder(TreeVisitor):
 
     def visit_or_operation(self, node: OrOperation, context: dict):
         self.expressions.extend(list(self._handle_or_operation(node)))
+        yield from super().generic_visit(node, context)
+
+    def _handle_not(self, node: Not):
+        expressions: list[_ColumnExpressionArgument] = []
+        for child in node.children:
+            expressions.extend(list(self.get_expressions(child)))
+
+        if len(expressions) > 0:
+            yield not_(*expressions)
+
+    def visit_not(self, node: Not, context: dict):
+        self.expressions.extend(list(self._handle_not(node)))
         yield from super().generic_visit(node, context)
 
     def visit_unknown_operation(self, node: UnknownOperation, context: dict):
@@ -118,4 +130,4 @@ class SelectBuilder(ExpressionsBuilder):
         for join in self.relationships.values():
             s = s.join(join)
 
-        return s.where(*self.expressions)
+        return s.where(or_(*self.expressions))

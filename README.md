@@ -167,8 +167,14 @@ A value is automatically casted based on a field of a model.
 | ---------------------------------------- | --------------------------------------------------------------------------------- |
 | `name:Rusty AND age:48`                  | `WHERE hero.name LIKE '%Rusty%' AND hero.age = 48`                                |
 | `name:Rusty OR age:47`                   | `WHERE hero.name LIKE '%Rusty%' OR hero.age = 47`                                 |
-| `name:Rusty NOT age:47`                  | `WHERE hero.name LIKE '%Rusty%' AND hero.age != 47`                               |
+| `NOT name:Rusty`                         | `WHERE hero.name NOT LIKE '%Rusty%'`                                              |
 | `(name:Spider OR age:48) AND name:Rusty` | `WHERE (hero.name LIKE '%Spider%' OR hero.age = 48) AND hero.name LIKE '%Rusty%'` |
+
+Note that the default conjunction is `OR`.
+
+| Query               | SQL (Where Clause)                                |
+| ------------------- | ------------------------------------------------- |
+| `name:Rusty age:48` | `WHERE hero.name LIKE '%Rusty%' OR hero.age = 48` |
 
 ### Relationship
 

@@ -38,6 +38,20 @@ def test_is_not_null(builder: SelectBuilder):
     )
 
 
+def test_default_conjunction(builder: SelectBuilder):
+    statement = builder(parse("name:* age:*"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name IS NOT NULL OR hero.age IS NOT NULL
+        """
+    )
+
+
 @pytest.mark.parametrize(
     ("q", "expected"),
     [
@@ -179,8 +193,8 @@ def test_or(builder: SelectBuilder, session: Session, q: str, expected: list[str
 @pytest.mark.parametrize(
     ("q", "expected"),
     [
-        ("name:Rusty NOT age:47", ["Rusty-Man"]),
-        ("name:Rusty NOT age:48", []),
+        ("NOT age:47", ["Rusty-Man"]),
+        ("NOT age:48", []),
     ],
 )
 def test_not(builder: SelectBuilder, session: Session, q: str, expected: list[str]):
@@ -196,7 +210,10 @@ def test_not(builder: SelectBuilder, session: Session, q: str, expected: list[st
     ("q", "expected"),
     [
         ("(name:Spider OR age:48) OR name:Rusty", ["Spider-Boy", "Rusty-Man"]),
+        ("(name:Spider OR age:48) OR NOT name:Rusty", ["Deadpond", "Spider-Boy", "Rusty-Man"]),
         ("(name:Spider OR age:48) AND name:Rusty", ["Rusty-Man"]),
+        ("(name:Spider OR age:48) AND NOT name:Rusty", ["Spider-Boy"]),
+        ("NOT (name:Spider OR age:48) AND name:Rusty", []),
         ("(name:Spider AND age:48) AND name:Rusty", []),
     ],
 )
