@@ -1,1 +1,1 @@
-from .builder import ExpressionsBuilder, SelectBuilder  # noqa: F401
+from .builder import ExpressionsBuilder, SelectBuilder, q_to_select  # noqa: F401

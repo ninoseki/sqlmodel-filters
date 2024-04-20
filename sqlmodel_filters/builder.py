@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any, TypeVar
 
+from luqum.thread import parse
 from luqum.tree import AndOperation, Group, Item, Not, OrOperation, SearchField, UnknownOperation
 from luqum.visitor import TreeVisitor
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
@@ -115,10 +117,10 @@ class SelectBuilder(ExpressionsBuilder):
 
         Args:
             tree (Item): A Luqum tree. (A parsed Lucene query)
-            entities (Any, optional): Entities given to `select` function. Defaults to None.
+            entities (Any, optional): Entities for `select` function. Defaults to None.
 
         Returns:
-            _type_: _description_
+            Select | SelectOfScalar: Select statement.
         """
         super().__call__(tree)
 
@@ -131,3 +133,28 @@ class SelectBuilder(ExpressionsBuilder):
             s = s.join(join)
 
         return s.where(or_(*self.expressions))
+
+
+def q_to_select(
+    q: str,
+    model: type[ModelType],
+    *,
+    relationships: dict[str, type[ModelType]] | None = None,
+    entities: Any = None,
+    parser: Callable[[str], Item] = parse,
+) -> Select | SelectOfScalar:
+    """A helper function to convert query to select statement.
+
+    Args:
+        q (str): Lucene query.
+        model (type[ModelType]): A SQLModel mode.
+        relationships (dict[str, type[ModelType]] | None, optional): SQLModel relationships. Defaults to None.
+        entities (Any, optional): Entities for `select` function. Defaults to None.
+        parser (Callable[[str], Item], optional): Luqum's parse function. Defaults to parse.
+
+    Returns:
+        Select | SelectOfScalar: Select statement.
+    """
+    parsed = parser(q)
+    builder: SelectBuilder = SelectBuilder(model, relationships=relationships)
+    return builder(parsed, entities=entities)
