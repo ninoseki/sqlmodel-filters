@@ -210,6 +210,16 @@ You can also use a function like `count`.
 3
 ```
 
+### Helper Function
+
+`q_to_select` function parses a query and builds a select statement on the fly.
+
+```py
+from sqlmodel_filters import q_to_select
+
+statement = q_to_select('name:"Spider-Boy"', Hero)
+```
+
 ## Known Limitations / Todos
 
 - Field Grouping is not supported

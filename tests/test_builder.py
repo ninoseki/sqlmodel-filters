@@ -4,10 +4,18 @@ import pytest
 from luqum.thread import parse
 from sqlmodel import Session, distinct, func, select
 
-from sqlmodel_filters import SelectBuilder
+from sqlmodel_filters import SelectBuilder, q_to_select
 
 from .models import Headquarter, Hero, Team
 from .utils import compile_with_literal_binds, normalize_multiline_string
+
+
+def test_q_to_select(session: Session):
+    statement = q_to_select('name:"Spider-Boy"', Hero)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == 1
+    assert heros[0].name == "Spider-Boy"
 
 
 @pytest.fixture()
