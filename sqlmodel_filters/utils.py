@@ -1,14 +1,21 @@
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel
 
 
-def cast_by_annotation(value: Any, annotation: Any) -> Any:
+@lru_cache
+def get_converter(annotation: Any):
     # TODO: find a better way in terms of performance...
-    class Wrapper(BaseModel):
+    class Converter(BaseModel):
         value: annotation
 
-    return Wrapper(value=value).value
+    return Converter
+
+
+def cast_by_annotation(value: Any, annotation: Any) -> Any:
+    klass = get_converter(annotation)
+    return klass(value=value).value
 
 
 def is_surrounded(s: Any, prefix: str | tuple[str, ...]) -> bool:

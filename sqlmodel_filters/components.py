@@ -1,3 +1,4 @@
+from functools import cached_property
 from types import MappingProxyType
 from typing import TypeVar
 
@@ -58,19 +59,21 @@ class ModelField:
         self.model = model
         self.relationships = relationships
 
-        self.chains = self.name.split(".")
+    @cached_property
+    def chains(self):
+        return self.name.split(".")
 
     @property
-    def is_nested(self) -> bool:
+    def is_chained(self) -> bool:
         return len(self.chains) > 1
 
-    @property
-    def _name(self) -> str:
+    @cached_property
+    def last_name(self) -> str:
         return self.chains[-1]
 
     @property
     def _model(self):
-        if not self.is_nested:
+        if not self.is_chained:
             return self.model
 
         model = self.model
@@ -80,22 +83,22 @@ class ModelField:
 
             model = self.relationships[chain]
 
-        name = self.chains[-2]
+        relationship_name = self.chains[-2]
         try:
-            return self.relationships[name]
+            return self.relationships[relationship_name]
         except KeyError as e:
-            raise IllegalFieldError(f"{model.__name__} does not have field:{name}") from e
+            raise IllegalFieldError(f"{model.__name__} does not have field:{relationship_name}") from e
 
     @property
     def field(self) -> InstrumentedAttribute:
         try:
-            return getattr(self._model, self._name)
+            return getattr(self._model, self.last_name)
         except AttributeError as e:
-            raise IllegalFieldError(f"{self._model.__name__} does not have field:{self._name}") from e
+            raise IllegalFieldError(f"{self._model.__name__} does not have field:{self.last_name}") from e
 
     @property
     def annotation(self) -> type:
-        return self._model.model_fields[self._name].annotation  # type: ignore
+        return self._model.model_fields[self.last_name].annotation  # type: ignore
 
 
 class SearchFieldNode:
