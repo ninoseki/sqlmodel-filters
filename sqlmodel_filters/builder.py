@@ -1,53 +1,73 @@
+import contextlib
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any, TypeVar
 
 from luqum.thread import parse
-from luqum.tree import AndOperation, Group, Item, Not, OrOperation, SearchField, UnknownOperation
+from luqum.tree import AndOperation, Group, Item, Not, OrOperation, SearchField, UnknownOperation, Word
 from luqum.visitor import TreeVisitor
+from pydantic.fields import FieldInfo
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
 from sqlmodel_filters.exceptions import IllegalFilterError
 
-from .components import SearchFieldNode
+from .components import SearchFieldNode, WordNode
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
 
 class ExpressionsBuilder(TreeVisitor):
-    def __init__(self, model: type[ModelType], *, relationships: dict[str, type[ModelType]] | None = None):
-        super().__init__()
+    def __init__(
+        self,
+        model: type[ModelType],
+        *,
+        relationships: dict[str, type[ModelType]] | None = None,
+        default_fields: dict[str, FieldInfo] | None = None,
+    ):
+        super().__init__(track_parents=True)
 
         self.model = model
         self.relationships = MappingProxyType(relationships or {})
+        self.default_fields = default_fields
 
         self.expressions: list[_ColumnExpressionArgument] = []
         self._analyzed_positions: set[int] = set()
 
+    def is_analyzed(self, pos: int) -> bool:
+        return pos in self._analyzed_positions
+
+    def update_analyzed_positions(self, pos: int):
+        self._analyzed_positions.add(pos)
+
     def get_expressions(self, node: Item):
         match node:
+            case Word():
+                pass
+                # yield from self._handle_word(node)
             case SearchField():
                 yield from self._handel_search_field(node)
             case Not():
-                search_field = node.children[0]
-                expressions = self.get_expressions(search_field)
-                yield not_(*expressions)
+                yield from self._handle_not(node)
             case Group():
                 yield from self._handle_group(node)
             case AndOperation():
                 yield from self._handle_and_operation(node)
             case OrOperation():
                 yield from self._handle_or_operation(node)
+            case UnknownOperation():
+                yield from self._handle_unknown_operation(node)
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
     def _handel_search_field(self, node: SearchField):
-        if (node.pos or -1) in self._analyzed_positions:
+        pos = node.pos or -1
+        if self.is_analyzed(pos):
             return
 
-        self._analyzed_positions.add(node.pos or -1)
+        self.update_analyzed_positions(pos)
+
         for child in node.children:
             wrapper = SearchFieldNode(child, model=self.model, name=node.name, relationships=self.relationships)
             yield from wrapper.get_expressions()
@@ -69,7 +89,7 @@ class ExpressionsBuilder(TreeVisitor):
             yield and_(*expressions)
 
     def visit_and_operation(self, node: AndOperation, context: dict):
-        self.expressions.extend(list(self._handle_and_operation(node)))
+        self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_or_operation(self, node: OrOperation):
@@ -82,7 +102,7 @@ class ExpressionsBuilder(TreeVisitor):
             yield or_(first, *others)
 
     def visit_or_operation(self, node: OrOperation, context: dict):
-        self.expressions.extend(list(self._handle_or_operation(node)))
+        self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_not(self, node: Not):
@@ -94,12 +114,38 @@ class ExpressionsBuilder(TreeVisitor):
             yield not_(*expressions)
 
     def visit_not(self, node: Not, context: dict):
-        self.expressions.extend(list(self._handle_not(node)))
+        self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
-    def visit_unknown_operation(self, node: UnknownOperation, context: dict):
+    def _handle_unknown_operation(self, node: UnknownOperation):
         for child in node.children:
-            self.expressions.extend(list(self.get_expressions(child)))
+            yield from self.get_expressions(child)
+
+    def visit_unknown_operation(self, node: UnknownOperation, context: dict):
+        self.expressions.extend(list(self.get_expressions(node)))
+        yield from super().generic_visit(node, context)
+
+    def _handle_top_level_word(self, node: Word):
+        pos = node.pos or -1
+        if self.is_analyzed(pos):
+            return
+
+        self.update_analyzed_positions(pos)
+
+        wrapper = WordNode(node, model=self.model, default_fields=self.default_fields)
+        yield from wrapper.get_expressions()
+
+    def visit_word(self, node: Word, context: dict):
+        parents: tuple[Any] = context.get("parents", ())
+        is_top_level = len(parents) == 0
+
+        if not is_top_level:
+            with contextlib.suppress(Exception):
+                last = parents[-1][-1]
+                is_top_level = last == node
+
+        if is_top_level:
+            self.expressions.extend(list(self._handle_top_level_word(node)))
 
         yield from super().generic_visit(node, context)
 
@@ -132,7 +178,10 @@ class SelectBuilder(ExpressionsBuilder):
         for join in self.relationships.values():
             s = s.join(join)
 
-        return s.where(or_(*self.expressions))
+        if len(self.expressions) > 0:
+            return s.where(or_(*self.expressions))
+
+        return s
 
 
 def q_to_select(

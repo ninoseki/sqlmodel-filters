@@ -210,6 +210,22 @@ You can also use a function like `count`.
 3
 ```
 
+## Default Fields
+
+Default fields are used if you don't set a field in a query.
+
+| Query    | SQL (Where Clause)                                                    |
+| -------- | --------------------------------------------------------------------- |
+| `Spider` | `WHERE hero.name LIKE '%Spider%' OR hero.secret_name LIKE '%Spider%'` |
+
+The default fields are fields of a model by default.
+
+You can override the default by setting `default_fields`.
+
+```py
+builder = SelectBuilder(Hero, default_fields={"name": Hero.model_fields["name"]})
+```
+
 ### Helper Function
 
 `q_to_select` function parses a query and builds a select statement on the fly.

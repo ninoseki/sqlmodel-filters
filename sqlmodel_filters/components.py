@@ -1,8 +1,10 @@
+import contextlib
 from functools import cached_property
 from types import MappingProxyType
 from typing import TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
+from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_
@@ -177,3 +179,27 @@ class SearchFieldNode:
                 yield from self._regex_expression(self.node)
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
+
+
+class WordNode:
+    def __init__(self, node: Word, *, model: type[ModelType], default_fields: dict[str, FieldInfo] | None = None):
+        self.node = node
+        self.model = model
+        self.default_fields = default_fields or model.model_fields
+
+    def get_field(self, name) -> InstrumentedAttribute:
+        return getattr(self.model, name)
+
+    def get_expressions(self):
+        for name, field_info in self.default_fields.items():
+            with contextlib.suppress(Exception):
+                field = self.get_field(name)
+
+                if self.node.value == "*":
+                    yield field.isnot(None)
+                else:
+                    casted = cast_by_annotation(self.node.value, field_info.annotation)
+                    if isinstance(casted, str):
+                        yield field.like(str(LikeWord(casted)))
+                    else:
+                        yield field == casted
