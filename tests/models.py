@@ -1,6 +1,7 @@
 import datetime
+import uuid
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import UUID, Field, Relationship, SQLModel
 
 from .utils import utcnow
 
@@ -31,3 +32,8 @@ class Hero(SQLModel, table=True):  # type: ignore
 
     team_id: int | None = Field(default=None, foreign_key="team.id")
     team: Team | None = Relationship(back_populates="heroes")
+
+
+class Extra(SQLModel, table=True):  # type: ignore
+    id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4, sa_type=UUID)
+    is_admin: bool = Field(...)
