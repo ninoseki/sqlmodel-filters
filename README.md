@@ -210,15 +210,13 @@ You can also use a function like `count`.
 3
 ```
 
-## Default Fields
+### Default Fields
 
-Default fields are used if you don't set a field in a query.
+Default fields, all of the fields in a model by default, are used when you don't set a field in a query.
 
 | Query    | SQL (Where Clause)                                                    |
 | -------- | --------------------------------------------------------------------- |
 | `Spider` | `WHERE hero.name LIKE '%Spider%' OR hero.secret_name LIKE '%Spider%'` |
-
-The default fields are fields of a model by default.
 
 You can override the default by setting `default_fields`.
 
