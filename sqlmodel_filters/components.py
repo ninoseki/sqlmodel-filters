@@ -1,16 +1,17 @@
 import contextlib
 from functools import cached_property
 from types import MappingProxyType
-from typing import TypeVar
+from typing import Annotated, Any, TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
+from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_
 
 from .exceptions import IllegalFieldError, IllegalFilterError
-from .utils import cast_by_annotation, dequote, deslash
+from .utils import dequote, deslash
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
@@ -55,11 +56,11 @@ class ModelField:
         model: type[ModelType],
         name: str,
         *,
-        relationships: MappingProxyType[str, type[SQLModel]],
+        relationships: MappingProxyType[str, type[SQLModel]] | None = None,
     ):
         self.name = name
         self.model = model
-        self.relationships = relationships
+        self.relationships = relationships or MappingProxyType({})
 
     @cached_property
     def chains(self):
@@ -73,8 +74,8 @@ class ModelField:
     def last_name(self) -> str:
         return self.chains[-1]
 
-    @property
-    def _model(self):
+    @cached_property
+    def chained_model(self):
         if not self.is_chained:
             return self.model
 
@@ -94,13 +95,20 @@ class ModelField:
     @property
     def field(self) -> InstrumentedAttribute:
         try:
-            return getattr(self._model, self.last_name)
+            return getattr(self.chained_model, self.last_name)
         except AttributeError as e:
-            raise IllegalFieldError(f"{self._model.__name__} does not have field:{self.last_name}") from e
+            raise IllegalFieldError(f"{self.chained_model.__name__} does not have field:{self.last_name}") from e
 
-    @property
-    def annotation(self) -> type:
-        return self._model.model_fields[self.last_name].annotation  # type: ignore
+    @cached_property
+    def field_info(self) -> FieldInfo:
+        return self.chained_model.model_fields[self.last_name]
+
+    @cached_property
+    def type_adapter(self) -> TypeAdapter[Any]:
+        return TypeAdapter(Annotated[self.field_info.annotation, self.field_info])  # type: ignore
+
+    def cast(self, obj: Any) -> Any:
+        return self.type_adapter.validate_python(obj)
 
 
 class SearchFieldNode:
@@ -114,18 +122,14 @@ class SearchFieldNode:
     def field(self):
         return self.model_field.field
 
-    @property
-    def annotation(self):
-        return self.model_field.annotation
-
     def _phrase_expression(self, phrase: Phrase):
-        yield self.field == cast_by_annotation(dequote(phrase.value), self.annotation)
+        yield self.field == self.model_field.cast(dequote(phrase.value))
 
     def _word_expression(self, word: Word):
         if word.value == "*":
             yield self.field.isnot(None)
         else:
-            casted = cast_by_annotation(word.value, self.annotation)
+            casted = self.model_field.cast(word.value)
             if isinstance(casted, str):
                 yield self.field.like(str(LikeWord(casted)))
             else:
@@ -135,30 +139,30 @@ class SearchFieldNode:
         expressions: list[_ColumnExpressionArgument] = []
 
         if range.include_high:
-            expressions.append(self.field <= cast_by_annotation(range.high.value, self.annotation))
+            expressions.append(self.field <= self.model_field.cast(range.high.value))
         else:
-            expressions.append(self.field < cast_by_annotation(range.high.value, self.annotation))
+            expressions.append(self.field < self.model_field.cast(range.high.value))
 
         if range.include_low:
-            expressions.append(self.field >= cast_by_annotation(range.low.value, self.annotation))
+            expressions.append(self.field >= self.model_field.cast(range.low.value))
         else:
-            expressions.append(self.field > cast_by_annotation(range.low.value, self.annotation))
+            expressions.append(self.field > self.model_field.cast(range.low.value))
 
         yield and_(*expressions)
 
     def _from_expression(self, from_: From):
         child: Word = from_.children[0]
         if from_.include:
-            yield self.field >= cast_by_annotation(child.value, self.annotation)
+            yield self.field >= self.model_field.cast(child.value)
         else:
-            yield self.field > cast_by_annotation(child.value, self.annotation)
+            yield self.field > self.model_field.cast(child.value)
 
     def _to_expression(self, to: To):
         child: Word = to.children[0]
         if to.include:
-            yield self.field <= cast_by_annotation(child.value, self.annotation)
+            yield self.field <= self.model_field.cast(child.value)
         else:
-            yield self.field < cast_by_annotation(child.value, self.annotation)
+            yield self.field < self.model_field.cast(child.value)
 
     def _regex_expression(self, regex: Regex):
         yield self.field.regexp_match(deslash(regex.value))
@@ -191,14 +195,15 @@ class WordNode:
         return getattr(self.model, name)
 
     def get_expressions(self):
-        for name, field_info in self.default_fields.items():
+        for name in self.default_fields:
+            model_field = ModelField(self.model, name=name)
             with contextlib.suppress(Exception):
                 field = self.get_field(name)
 
                 if self.node.value == "*":
                     yield field.isnot(None)
                 else:
-                    casted = cast_by_annotation(self.node.value, field_info.annotation)
+                    casted = model_field.cast(self.node.value)
                     if isinstance(casted, str):
                         yield field.like(str(LikeWord(casted)))
                     else:

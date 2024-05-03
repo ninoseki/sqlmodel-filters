@@ -1,10 +1,11 @@
 import datetime
 from types import MappingProxyType
+from typing import Any
 
 import pytest
 from luqum.tree import Word
 
-from sqlmodel_filters.components import LikeWord, SearchFieldNode
+from sqlmodel_filters.components import LikeWord, ModelField, SearchFieldNode
 
 from .models import Headquarter, Hero, Team
 
@@ -33,18 +34,13 @@ def test_search_field_node_field(name: str, expected: str):
 
 
 @pytest.mark.parametrize(
-    ("name", "expected"),
+    ("name", "obj", "expected"),
     [
-        ("id", int | None),
-        ("created_at", datetime.datetime),
-        ("team.id", int | None),
-        ("team.name", str),
-        ("team.headquarter.id", int | None),
-        ("team.headquarter.name", str),
+        ("id", "1", 1),
+        ("name", "foo", "foo"),
+        ("created_at", "2020-01-01 00:00:00", datetime.datetime(2020, 1, 1, 0, 0)),
     ],
 )
-def test_search_field_node_annotation(name: str, expected: type):
-    node = SearchFieldNode(
-        Word("id"), model=Hero, name=name, relationships=MappingProxyType({"team": Team, "headquarter": Headquarter})
-    )
-    assert node.annotation == expected
+def test_model_field_cast(name: str, obj: Any, expected: type):
+    model_field = ModelField(Hero, name)
+    assert model_field.cast(obj) == expected
