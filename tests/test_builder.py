@@ -347,7 +347,7 @@ def test_relationships_2(q: str, expected: list[str], session: Session):
     tree = parse(q)
     builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
     statement = builder(tree)
-    statement = statement.group_by(Team.id)
+    statement = statement.group_by(Team.id)  # type: ignore
 
     teams = session.exec(statement).all()
     assert [team.name for team in teams] == expected
@@ -365,7 +365,7 @@ def test_relationships_3(q: str, expected: int, session: Session):
     tree = parse(q)
     builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
     statement = builder(tree, entities=[func.count(distinct(Team.id))])  # type: ignore
-    statement = statement.group_by(Team.id)
+    statement = statement.group_by(Team.id)  # type: ignore
 
     count = session.scalar(statement)
     assert (count or 0) == expected  # type: ignore
