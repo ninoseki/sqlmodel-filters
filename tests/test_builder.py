@@ -32,7 +32,22 @@ def builder():
         ("47", 0),
     ],
 )
-def test_default_fields(builder: SelectBuilder, session: Session, q: str, expected: int):
+def test_default_fields_with_word(builder: SelectBuilder, session: Session, q: str, expected: int):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert len(heros) == expected
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ('"Spider"', 0),
+        ('"Spider-Boy"', 1),
+    ],
+)
+def test_default_fields_with_phrase(builder: SelectBuilder, session: Session, q: str, expected: int):
     tree = parse(q)
     statement = builder(tree)
 

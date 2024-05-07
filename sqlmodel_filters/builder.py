@@ -4,7 +4,18 @@ from types import MappingProxyType
 from typing import Any, TypeVar
 
 from luqum.thread import parse
-from luqum.tree import AndOperation, Group, Item, Not, OrOperation, SearchField, UnknownOperation, Word
+from luqum.tree import (
+    AndOperation,
+    Group,
+    Item,
+    Not,
+    OrOperation,
+    Phrase,
+    SearchField,
+    Term,
+    UnknownOperation,
+    Word,
+)
 from luqum.visitor import TreeVisitor
 from pydantic.fields import FieldInfo
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
@@ -13,7 +24,7 @@ from sqlmodel.sql.expression import Select, SelectOfScalar
 
 from sqlmodel_filters.exceptions import IllegalFilterError
 
-from .components import SearchFieldNode, WordNode
+from .components import PhraseNode, SearchFieldNode, WordNode
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
@@ -125,17 +136,26 @@ class ExpressionsBuilder(TreeVisitor):
         self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
-    def _handle_top_level_word(self, node: Word):
+    def _handle_top_level_term(self, node: Term):
         pos = node.pos or -1
         if self.is_analyzed(pos):
             return
 
         self.update_analyzed_positions(pos)
 
-        wrapper = WordNode(node, model=self.model, default_fields=self.default_fields)
+        def get_wrapper():
+            match node:
+                case Word():
+                    return WordNode(node, model=self.model, default_fields=self.default_fields)
+                case Phrase():
+                    return PhraseNode(node, model=self.model, default_fields=self.default_fields)
+                case unknown:
+                    raise IllegalFilterError(f"Top level {unknown.__class__} is not supported yet")
+
+        wrapper = get_wrapper()
         yield from wrapper.get_expressions()
 
-    def visit_word(self, node: Word, context: dict):
+    def visit_term(self, node: Term, context: dict):
         parents: tuple[Any] = context.get("parents", ())
         is_top_level = len(parents) == 0
 
@@ -145,7 +165,7 @@ class ExpressionsBuilder(TreeVisitor):
                 is_top_level = last == node
 
         if is_top_level:
-            self.expressions.extend(list(self._handle_top_level_word(node)))
+            self.expressions.extend(list(self._handle_top_level_term(node)))
 
         yield from super().generic_visit(node, context)
 
