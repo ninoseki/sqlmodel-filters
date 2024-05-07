@@ -1,7 +1,7 @@
 import contextlib
 from functools import cached_property
 from types import MappingProxyType
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, Generic, TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
 from pydantic import TypeAdapter
@@ -14,6 +14,7 @@ from .exceptions import IllegalFieldError, IllegalFilterError
 from .utils import dequote, deslash
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
+NodeType = TypeVar("NodeType", bound=Item)
 
 
 def replace_wildcards(s: str, *, mapping: MappingProxyType[str, str]):
@@ -185,8 +186,8 @@ class SearchFieldNode:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
 
-class WordNode:
-    def __init__(self, node: Word, *, model: type[ModelType], default_fields: dict[str, FieldInfo] | None = None):
+class BaseNode(Generic[NodeType]):
+    def __init__(self, node: NodeType, *, model: type[ModelType], default_fields: dict[str, FieldInfo] | None = None):
         self.node = node
         self.model = model
         self.default_fields = default_fields or model.model_fields
@@ -194,6 +195,8 @@ class WordNode:
     def get_field(self, name) -> InstrumentedAttribute:
         return getattr(self.model, name)
 
+
+class WordNode(BaseNode[Word]):
     def get_expressions(self):
         for name in self.default_fields:
             model_field = ModelField(self.model, name=name)
@@ -208,3 +211,13 @@ class WordNode:
                         yield field.like(str(LikeWord(casted)))
                     else:
                         yield field == casted
+
+
+class PhraseNode(BaseNode[Phrase]):
+    def get_expressions(self):
+        for name in self.default_fields:
+            model_field = ModelField(self.model, name=name)
+            with contextlib.suppress(Exception):
+                field = self.get_field(name)
+                casted = model_field.cast(dequote(self.node.value))
+                yield field == casted
