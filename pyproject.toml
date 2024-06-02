@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "sqlmodel-filters"
 version = "0.0.0"
-description = "A Lucene query like fliltering for SQLModel"
+description = "A Lucene query like filtering for SQLModel"
 authors = ["Manabu Niseki <manabu.niseki@gmail.com>"]
 license = "MIT"
 readme = "README.md"

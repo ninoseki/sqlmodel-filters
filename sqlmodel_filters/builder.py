@@ -1,4 +1,5 @@
 import contextlib
+import itertools
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any, TypeVar
@@ -92,10 +93,7 @@ class ExpressionsBuilder(TreeVisitor):
         yield from self._handle_and_operation(node)  # type: ignore
 
     def _handle_and_operation(self, node: AndOperation):
-        expressions: list[_ColumnExpressionArgument] = []
-        for child in node.children:
-            expressions.extend(list(self.get_expressions(child)))
-
+        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
         if len(expressions) > 0:
             yield and_(*expressions)
 
@@ -104,10 +102,7 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_or_operation(self, node: OrOperation):
-        expressions: list[_ColumnExpressionArgument] = []
-        for child in node.children:
-            expressions.extend(list(self.get_expressions(child)))
-
+        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
         if len(expressions) > 0:
             first, *others = expressions
             yield or_(first, *others)
@@ -117,10 +112,7 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_not(self, node: Not):
-        expressions: list[_ColumnExpressionArgument] = []
-        for child in node.children:
-            expressions.extend(list(self.get_expressions(child)))
-
+        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
         if len(expressions) > 0:
             yield not_(*expressions)
 
