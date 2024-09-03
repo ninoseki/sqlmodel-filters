@@ -219,10 +219,10 @@ class Tagging(SQLModel, table=True):
     post_id: str = Field(foreign_key="posts.id", primary_key=True)
 ```
 
-A value of `relationships` keyword arguments should be a dict which has:
+A value of the `relationships` keyword argument should be a dict which has:
 
 - `join`: a many-to-many relationship to join
-- `model`: a model of the many-to-many relationship
+- `model`: a model of a many-to-many relationship
 
 For example:
 
