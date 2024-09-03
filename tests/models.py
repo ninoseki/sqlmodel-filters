@@ -37,3 +37,27 @@ class Hero(SQLModel, table=True):  # type: ignore
 class Extra(SQLModel, table=True):  # type: ignore
     id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4, sa_type=UUID)
     is_admin: bool = Field(...)
+
+
+class Tag(SQLModel, table=True):
+    __tablename__ = "tags"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(...)
+
+    posts: list["Post"] = Relationship(back_populates="tags", sa_relationship_kwargs={"secondary": "taggings"})
+
+
+class Post(SQLModel, table=True):
+    __tablename__ = "posts"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    tags: list["Tag"] = Relationship(back_populates="posts", sa_relationship_kwargs={"secondary": "taggings"})
+
+
+class Tagging(SQLModel, table=True):
+    __tablename__ = "taggings"  # type: ignore
+
+    tag_id: str = Field(foreign_key="tags.id", primary_key=True)
+    post_id: str = Field(foreign_key="posts.id", primary_key=True)

@@ -2,23 +2,24 @@ import datetime
 
 import pytest
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine
 
-from .models import Headquarter, Hero, Team
+from .models import Headquarter, Hero, Post, Tag, Tagging, Team  # noqa: F401
 from .utils import utcnow
 
 
-@pytest.fixture()
+@pytest.fixture
 def current_date() -> datetime.date:
     return utcnow().date()
 
 
-@pytest.fixture()
+@pytest.fixture
 def yesterday(current_date: datetime.date) -> datetime.date:
     return current_date - datetime.timedelta(days=1)
 
 
-@pytest.fixture()
+@pytest.fixture
 def tomorrow(current_date: datetime.date) -> datetime.date:
     return current_date + datetime.timedelta(days=1)
 
@@ -36,7 +37,10 @@ def _setup_metadata(engine: Engine):
 @pytest.fixture(scope="session")
 def session(engine: Engine, _setup_metadata):
     with Session(engine) as session:
-        yield session
+        try:
+            yield session
+        except SQLAlchemyError:
+            session.rollback()
 
 
 @pytest.fixture(autouse=True, scope="session")

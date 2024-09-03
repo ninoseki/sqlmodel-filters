@@ -23,9 +23,8 @@ from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlmodel import SQLModel, and_, not_, or_, select
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
-from sqlmodel_filters.exceptions import IllegalFilterError
-
-from .components import PhraseNode, SearchFieldNode, WordNode
+from .components import PhraseNode, Relationship, SearchFieldNode, WordNode
+from .exceptions import IllegalFilterError
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 
@@ -35,7 +34,7 @@ class ExpressionsBuilder(TreeVisitor):
         self,
         model: type[ModelType],
         *,
-        relationships: dict[str, type[ModelType]] | None = None,
+        relationships: dict[str, Relationship | type[ModelType]] | None = None,
         default_fields: dict[str, FieldInfo] | None = None,
     ):
         super().__init__(track_parents=True)
@@ -187,8 +186,8 @@ class SelectBuilder(ExpressionsBuilder):
 
         s = select(*entities) if isinstance(entities, (tuple, list)) else select(entities)
 
-        for join in self.relationships.values():
-            s = s.join(join)
+        for relationship in self.relationships.values():
+            s = s.join(relationship["join"]) if isinstance(relationship, dict) else s.join(relationship)  # type: ignore
 
         if len(self.expressions) > 0:
             return s.where(or_(*self.expressions))
@@ -200,22 +199,22 @@ def q_to_select(
     q: str,
     model: type[ModelType],
     *,
-    relationships: dict[str, type[ModelType]] | None = None,
+    relationships: dict[str, type[ModelType] | Relationship] | None = None,
     entities: Any = None,
     parser: Callable[[str], Item] = parse,
 ) -> Select | SelectOfScalar:
     """A helper function to convert query to select statement.
 
     Args:
-        q (str): Lucene query.
+        q (str): A Lucene query.
         model (type[ModelType]): A SQLModel mode.
-        relationships (dict[str, type[ModelType]] | None, optional): SQLModel relationships. Defaults to None.
+        relationships (dict[str, type[ModelType]  |  Relationship] | None, optional): SQLModel relationships. Defaults to None.
         entities (Any, optional): Entities for `select` function. Defaults to None.
-        parser (Callable[[str], Item], optional): Luqum's parse function. Defaults to parse.
+        parser (Callable[[str], Item], optional): A Luqum's parse function. Defaults to parse.
 
     Returns:
-        Select | SelectOfScalar: Select statement.
-    """
+        Select | SelectOfScalar: A select statement.
+    """  # noqa: E501
     parsed = parser(q)
     builder: SelectBuilder = SelectBuilder(model, relationships=relationships)
     return builder(parsed, entities=entities)

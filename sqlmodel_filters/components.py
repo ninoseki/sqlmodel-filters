@@ -1,7 +1,7 @@
 import contextlib
 from functools import cached_property
 from types import MappingProxyType
-from typing import Annotated, Any, Generic, TypeVar
+from typing import Annotated, Any, Generic, TypedDict, TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
 from pydantic import TypeAdapter
@@ -15,6 +15,18 @@ from .utils import dequote, deslash
 
 ModelType = TypeVar("ModelType", bound=SQLModel)
 NodeType = TypeVar("NodeType", bound=Item)
+
+
+class Relationship(TypedDict):
+    join: SQLModel
+    model: SQLModel
+
+
+def relationship_to_model(relationship: Relationship | type[ModelType]) -> type[ModelType]:
+    if isinstance(relationship, dict):
+        return relationship["model"]  # type: ignore
+
+    return relationship
 
 
 def replace_wildcards(s: str, *, mapping: MappingProxyType[str, str]):
@@ -57,7 +69,7 @@ class ModelField:
         model: type[ModelType],
         name: str,
         *,
-        relationships: MappingProxyType[str, type[SQLModel]] | None = None,
+        relationships: MappingProxyType[str, Relationship | type[ModelType]] | None = None,
     ):
         self.name = name
         self.model = model
@@ -85,11 +97,11 @@ class ModelField:
             if chain not in model.__sqlmodel_relationships__:
                 raise IllegalFieldError(f"{model.__name__} does not have field:{chain}")
 
-            model = self.relationships[chain]
+            model = relationship_to_model(self.relationships[chain])
 
         relationship_name = self.chains[-2]
         try:
-            return self.relationships[relationship_name]
+            return relationship_to_model(self.relationships[relationship_name])
         except KeyError as e:
             raise IllegalFieldError(f"{model.__name__} does not have field:{relationship_name}") from e
 
@@ -114,7 +126,12 @@ class ModelField:
 
 class SearchFieldNode:
     def __init__(
-        self, node: Item, *, model: type[ModelType], name: str, relationships: MappingProxyType[str, type[SQLModel]]
+        self,
+        node: Item,
+        *,
+        model: type[ModelType],
+        name: str,
+        relationships: MappingProxyType[str, type[SQLModel] | Relationship],
     ):
         self.node = node
         self.model_field = ModelField(model, name, relationships=relationships)

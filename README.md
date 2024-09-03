@@ -190,6 +190,52 @@ FROM hero JOIN team ON team.id = hero.team_id JOIN headquarter ON headquarter.id
 WHERE hero.name LIKE '%Spider%' AND team.name = 'Preventers' AND headquarter.name LIKE '%Sharp%'
 ```
 
+### Many-to-Many Relationship
+
+If you have a many-to-many relationship like the following:
+
+```py
+class Tag(SQLModel, table=True):
+    __tablename__ = "tags"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(...)
+
+    posts: list["Post"] = Relationship(back_populates="tags", sa_relationship_kwargs={"secondary": "taggings"})
+
+
+class Post(SQLModel, table=True):
+    __tablename__ = "posts"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    tags: list["Tag"] = Relationship(back_populates="posts", sa_relationship_kwargs={"secondary": "taggings"})
+
+
+class Tagging(SQLModel, table=True):
+    __tablename__ = "taggings"  # type: ignore
+
+    tag_id: str = Field(foreign_key="tags.id", primary_key=True)
+    post_id: str = Field(foreign_key="posts.id", primary_key=True)
+```
+
+A value of `relationships` keyword arguments should be a dict which has:
+
+- `join`: a many-to-many relationship to join
+- `model`: a model of the many-to-many relationship
+
+For example:
+
+```py
+>>> tree = parse("tags.name:foo")
+>>> builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
+>>> statement = builder(tree)
+>>> statement.compile(compile_kwargs={"literal_binds": True})
+SELECT posts.id
+FROM posts JOIN taggings AS taggings_1 ON posts.id = taggings_1.post_id JOIN tags ON tags.id = taggings_1.tag_id
+WHERE tags.name LIKE '%foo%'
+```
+
 ### Entity
 
 Set `entities` to select specific columns.

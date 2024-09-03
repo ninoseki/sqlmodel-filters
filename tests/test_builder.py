@@ -6,7 +6,7 @@ from sqlmodel import Session, distinct, func, select
 
 from sqlmodel_filters import SelectBuilder, q_to_select
 
-from .models import Headquarter, Hero, Team
+from .models import Headquarter, Hero, Post, Tag, Team
 from .utils import compile_with_literal_binds, normalize_multiline_string
 
 
@@ -18,7 +18,7 @@ def test_q_to_select(session: Session):
     assert heros[0].name == "Spider-Boy"
 
 
-@pytest.fixture()
+@pytest.fixture
 def builder():
     return SelectBuilder(Hero)
 
@@ -341,7 +341,7 @@ def test_entity_3(builder: SelectBuilder, session: Session):
 )
 def test_relationships(q: str, expected: list[str], session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Hero, relationships={"team": Team, "headquarter": Headquarter})
+    builder = SelectBuilder(Hero, relationships={"team": Team, "headquarter": Headquarter})  # type: ignore
     statement = builder(tree)
 
     heros = session.exec(statement).all()
@@ -360,7 +360,7 @@ def test_relationships(q: str, expected: list[str], session: Session):
 )
 def test_relationships_2(q: str, expected: list[str], session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
+    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})  # type: ignore
     statement = builder(tree)
     statement = statement.group_by(Team.id)  # type: ignore
 
@@ -378,9 +378,32 @@ def test_relationships_2(q: str, expected: list[str], session: Session):
 )
 def test_relationships_3(q: str, expected: int, session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})
+    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})  # type: ignore
     statement = builder(tree, entities=[func.count(distinct(Team.id))])  # type: ignore
     statement = statement.group_by(Team.id)  # type: ignore
 
     count = session.scalar(statement)
     assert (count or 0) == expected  # type: ignore
+
+
+@pytest.fixture
+def post(session: Session) -> Post:
+    post = Post()
+    post.tags.append(Tag(name="foo"))
+
+    session.add(post)
+    session.commit()
+    session.refresh(post)
+    return post
+
+
+def test_m2m(session: Session, post: Post):
+    tag_name = post.tags[0].name
+    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
+    tree = parse(f"tags.name:{tag_name}")
+    statement = builder(tree)
+
+    posts = session.exec(statement).all()
+    for post in posts:
+        for tag in post.tags:
+            assert tag.name == tag_name
