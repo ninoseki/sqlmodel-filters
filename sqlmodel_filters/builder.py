@@ -184,10 +184,18 @@ class SelectBuilder(ExpressionsBuilder):
         if entities is None:
             entities = self.model
 
-        s = select(*entities) if isinstance(entities, (tuple, list)) else select(entities)
+        s: Select | SelectOfScalar = select(*entities) if isinstance(entities, (tuple, list)) else select(entities)
 
         for relationship in self.relationships.values():
-            s = s.join(relationship["join"]) if isinstance(relationship, dict) else s.join(relationship)  # type: ignore
+            if isinstance(relationship, dict):
+                s = s.join(
+                    relationship["join"],
+                    onclause=relationship.get("onclause"),
+                    isouter=relationship.get("isouter") or False,
+                    full=relationship.get("full") or False,
+                )
+            else:
+                s = s.join(relationship)
 
         if len(self.expressions) > 0:
             return s.where(or_(*self.expressions))

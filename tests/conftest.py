@@ -81,3 +81,16 @@ def _setup_heros(session: Session):
         session.add(hero)
 
     session.commit()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _setup_posts(session: Session):
+    post_with_tag = Post()
+    post_with_tag.tags.append(Tag(name="foo"))
+
+    post_without_tag = Post()
+
+    for post in [post_with_tag, post_without_tag]:
+        session.add(post)
+
+    session.commit()
