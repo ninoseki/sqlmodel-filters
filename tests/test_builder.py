@@ -386,24 +386,30 @@ def test_relationships_3(q: str, expected: int, session: Session):
     assert (count or 0) == expected  # type: ignore
 
 
-@pytest.fixture
-def post(session: Session) -> Post:
-    post = Post()
-    post.tags.append(Tag(name="foo"))
+def test_m2m(session: Session):
+    post = session.exec(select(Post)).first()
+    assert post is not None
 
-    session.add(post)
-    session.commit()
-    session.refresh(post)
-    return post
-
-
-def test_m2m(session: Session, post: Post):
     tag_name = post.tags[0].name
     builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
     tree = parse(f"tags.name:{tag_name}")
     statement = builder(tree)
 
-    posts = session.exec(statement).all()
+    posts: list[Post] = session.exec(statement).all()  # type: ignore
     for post in posts:
         for tag in post.tags:
             assert tag.name == tag_name
+
+
+def test_m2m_count_without_outer(session: Session):
+    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
+    tree = parse("id:*")
+    statement = builder(tree, entities=[func.count(Post.id)])  # type: ignore
+    assert session.scalar(statement) < session.exec(func.count(Post.id)).scalar()  # type: ignore
+
+
+def test_m2m_count_with_isouter(session: Session):
+    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "isouter": True, "model": Tag}})  # type: ignore
+    tree = parse("id:*")
+    statement = builder(tree, entities=[func.count(Post.id)])  # type: ignore
+    assert session.scalar(statement) == session.exec(func.count(Post.id)).scalar()  # type: ignore

@@ -221,8 +221,10 @@ class Tagging(SQLModel, table=True):
 
 A value of the `relationships` keyword argument should be a dict which has:
 
-- `join`: a many-to-many relationship to join
-- `model`: a model of a many-to-many relationship
+- `join`: a many-to-many relationship to join.
+- `isouter`: whether to generate LEFT OUTER join or not. Defaults to `False`.
+- `full`: whether to generate FULL OUTER join or not. Defaults to `False`.
+- `model`: a model of a many-to-many relationship.
 
 For example:
 

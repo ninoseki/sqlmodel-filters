@@ -7,7 +7,7 @@ from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy.sql._typing import _ColumnExpressionArgument
+from sqlalchemy.sql._typing import _ColumnExpressionArgument, _JoinTargetArgument
 from sqlmodel import SQLModel, and_
 
 from .exceptions import IllegalFieldError, IllegalFilterError
@@ -18,7 +18,9 @@ NodeType = TypeVar("NodeType", bound=Item)
 
 
 class Relationship(TypedDict):
-    join: SQLModel
+    join: _JoinTargetArgument
+    full: bool | None
+    isouter: bool | None
     model: SQLModel
 
 
