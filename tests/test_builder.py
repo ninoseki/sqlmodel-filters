@@ -32,7 +32,9 @@ def builder():
         ("47", 0),
     ],
 )
-def test_default_fields_with_word(builder: SelectBuilder, session: Session, q: str, expected: int):
+def test_default_fields_with_word(
+    builder: SelectBuilder, session: Session, q: str, expected: int
+):
     tree = parse(q)
     statement = builder(tree)
 
@@ -47,7 +49,9 @@ def test_default_fields_with_word(builder: SelectBuilder, session: Session, q: s
         ('"Spider-Boy"', 1),
     ],
 )
-def test_default_fields_with_phrase(builder: SelectBuilder, session: Session, q: str, expected: int):
+def test_default_fields_with_phrase(
+    builder: SelectBuilder, session: Session, q: str, expected: int
+):
     tree = parse(q)
     statement = builder(tree)
 
@@ -250,7 +254,10 @@ def test_not(builder: SelectBuilder, session: Session, q: str, expected: list[st
     ("q", "expected"),
     [
         ("(name:Spider OR age:48) OR name:Rusty", ["Spider-Boy", "Rusty-Man"]),
-        ("(name:Spider OR age:48) OR NOT name:Rusty", ["Deadpond", "Spider-Boy", "Rusty-Man"]),
+        (
+            "(name:Spider OR age:48) OR NOT name:Rusty",
+            ["Deadpond", "Spider-Boy", "Rusty-Man"],
+        ),
         ("(name:Spider OR age:48) AND name:Rusty", ["Rusty-Man"]),
         ("(name:Spider OR age:48) AND NOT name:Rusty", ["Spider-Boy"]),
         ("NOT (name:Spider OR age:48) AND name:Rusty", []),
@@ -335,13 +342,19 @@ def test_entity_3(builder: SelectBuilder, session: Session):
         ("team.name:Z-Force", ["Deadpond"]),
         ("team.name:Preventers AND name:Spider", ["Spider-Boy"]),
         ("team.name:Preventers OR name:Spider", ["Spider-Boy", "Rusty-Man"]),
-        ('team.name:Z-Force AND team.headquarter.name:"Sister Margaret\'s Bar"', ["Deadpond"]),
+        (
+            'team.name:Z-Force AND team.headquarter.name:"Sister Margaret\'s Bar"',
+            ["Deadpond"],
+        ),
         ('team.name:Z-Force AND team.headquarter.name:"Sharp Tower"', []),
     ],
 )
 def test_relationships(q: str, expected: list[str], session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Hero, relationships={"team": Team, "headquarter": Headquarter})  # type: ignore
+    builder = SelectBuilder(
+        Hero,
+        relationships={"team": Team, "headquarter": Headquarter},  # type: ignore
+    )
     statement = builder(tree)
 
     heros = session.exec(statement).all()
@@ -360,7 +373,10 @@ def test_relationships(q: str, expected: list[str], session: Session):
 )
 def test_relationships_2(q: str, expected: list[str], session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})  # type: ignore
+    builder = SelectBuilder(
+        Team,
+        relationships={"heros": Hero, "headquarter": Headquarter},  # type: ignore
+    )
     statement = builder(tree)
     statement = statement.group_by(Team.id)  # type: ignore
 
@@ -378,7 +394,10 @@ def test_relationships_2(q: str, expected: list[str], session: Session):
 )
 def test_relationships_3(q: str, expected: int, session: Session):
     tree = parse(q)
-    builder = SelectBuilder(Team, relationships={"heros": Hero, "headquarter": Headquarter})  # type: ignore
+    builder = SelectBuilder(
+        Team,
+        relationships={"heros": Hero, "headquarter": Headquarter},  # type: ignore
+    )
     statement = builder(tree, entities=[func.count(distinct(Team.id))])  # type: ignore
     statement = statement.group_by(Team.id)  # type: ignore
 
@@ -391,7 +410,10 @@ def test_m2m(session: Session):
     assert post is not None
 
     tag_name = post.tags[0].name
-    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
+    builder = SelectBuilder(
+        Post,
+        relationships={"tags": {"join": Post.tags, "model": Tag}},  # type: ignore
+    )  # type: ignore
     tree = parse(f"tags.name:{tag_name}")
     statement = builder(tree)
 
@@ -402,14 +424,20 @@ def test_m2m(session: Session):
 
 
 def test_m2m_count_without_outer(session: Session):
-    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "model": Tag}})  # type: ignore
+    builder = SelectBuilder(
+        Post,
+        relationships={"tags": {"join": Post.tags, "model": Tag}},  # type: ignore
+    )
     tree = parse("id:*")
     statement = builder(tree, entities=[func.count(Post.id)])  # type: ignore
     assert session.scalar(statement) < session.exec(func.count(Post.id)).scalar()  # type: ignore
 
 
 def test_m2m_count_with_isouter(session: Session):
-    builder = SelectBuilder(Post, relationships={"tags": {"join": Post.tags, "isouter": True, "model": Tag}})  # type: ignore
+    builder = SelectBuilder(
+        Post,
+        relationships={"tags": {"join": Post.tags, "isouter": True, "model": Tag}},  # type: ignore
+    )
     tree = parse("id:*")
     statement = builder(tree, entities=[func.count(Post.id)])  # type: ignore
     assert session.scalar(statement) == session.exec(func.count(Post.id)).scalar()  # type: ignore

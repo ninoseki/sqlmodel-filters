@@ -10,7 +10,9 @@ from sqlmodel_filters.components import LikeWord, ModelField, SearchFieldNode
 from .models import Headquarter, Hero, Team
 
 
-@pytest.mark.parametrize(("s", "expected"), [("foo", "%foo%"), ("te?t", "te_t"), ("te*t", "te%t")])
+@pytest.mark.parametrize(
+    ("s", "expected"), [("foo", "%foo%"), ("te?t", "te_t"), ("te*t", "te%t")]
+)
 def test_like_word(s: str, expected: str):
     assert str(LikeWord(s)) == expected
 
@@ -28,7 +30,10 @@ def test_like_word(s: str, expected: str):
 )
 def test_search_field_node_field(name: str, expected: str):
     node = SearchFieldNode(
-        Word("id"), model=Hero, name=name, relationships=MappingProxyType({"team": Team, "headquarter": Headquarter})
+        Word("id"),
+        model=Hero,
+        name=name,
+        relationships=MappingProxyType({"team": Team, "headquarter": Headquarter}),
     )
     assert str(node.field) == expected
 
