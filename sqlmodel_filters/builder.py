@@ -37,6 +37,13 @@ class ExpressionsBuilder(TreeVisitor):
         relationships: dict[str, Relationship | type[ModelType]] | None = None,
         default_fields: dict[str, FieldInfo] | None = None,
     ):
+        """Expression builder.
+
+        Args:
+            model (type[ModelType]): A SQLModel mode.
+            relationships (dict[str, type[ModelType]  |  Relationship] | None, optional): SQLModel relationships. Defaults to None.
+            default_fields (dict[str, FieldInfo] | None, optional): Default fields. Defaults to None.
+        """
         super().__init__(track_parents=True)
 
         self.model = model
@@ -80,7 +87,12 @@ class ExpressionsBuilder(TreeVisitor):
         self.update_analyzed_positions(pos)
 
         for child in node.children:
-            wrapper = SearchFieldNode(child, model=self.model, name=node.name, relationships=self.relationships)
+            wrapper = SearchFieldNode(
+                child,
+                model=self.model,
+                name=node.name,
+                relationships=self.relationships,
+            )
             yield from wrapper.get_expressions()
 
     def visit_search_field(self, node: SearchField, context: dict):
@@ -92,7 +104,11 @@ class ExpressionsBuilder(TreeVisitor):
         yield from self._handle_and_operation(node)  # type: ignore
 
     def _handle_and_operation(self, node: AndOperation):
-        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
+        expressions = list(
+            itertools.chain.from_iterable(
+                [self.get_expressions(child) for child in node.children]
+            )
+        )
         if len(expressions) > 0:
             yield and_(*expressions)
 
@@ -101,7 +117,11 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_or_operation(self, node: OrOperation):
-        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
+        expressions = list(
+            itertools.chain.from_iterable(
+                [self.get_expressions(child) for child in node.children]
+            )
+        )
         if len(expressions) > 0:
             first, *others = expressions
             yield or_(first, *others)
@@ -111,7 +131,11 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_not(self, node: Not):
-        expressions = list(itertools.chain.from_iterable([self.get_expressions(child) for child in node.children]))
+        expressions = list(
+            itertools.chain.from_iterable(
+                [self.get_expressions(child) for child in node.children]
+            )
+        )
         if len(expressions) > 0:
             yield not_(*expressions)
 
@@ -137,11 +161,17 @@ class ExpressionsBuilder(TreeVisitor):
         def get_wrapper():
             match node:
                 case Word():
-                    return WordNode(node, model=self.model, default_fields=self.default_fields)
+                    return WordNode(
+                        node, model=self.model, default_fields=self.default_fields
+                    )
                 case Phrase():
-                    return PhraseNode(node, model=self.model, default_fields=self.default_fields)
+                    return PhraseNode(
+                        node, model=self.model, default_fields=self.default_fields
+                    )
                 case unknown:
-                    raise IllegalFilterError(f"Top level {unknown.__class__} is not supported yet")
+                    raise IllegalFilterError(
+                        f"Top level {unknown.__class__} is not supported yet"
+                    )
 
         wrapper = get_wrapper()
         yield from wrapper.get_expressions()
@@ -184,7 +214,11 @@ class SelectBuilder(ExpressionsBuilder):
         if entities is None:
             entities = self.model
 
-        s: Select | SelectOfScalar = select(*entities) if isinstance(entities, (tuple, list)) else select(entities)
+        s: Select | SelectOfScalar = (
+            select(*entities)
+            if isinstance(entities, (tuple, list))
+            else select(entities)
+        )
 
         for relationship in self.relationships.values():
             if isinstance(relationship, dict):
@@ -209,6 +243,7 @@ def q_to_select(
     *,
     relationships: dict[str, type[ModelType] | Relationship] | None = None,
     entities: Any = None,
+    default_fields: dict[str, FieldInfo] | None = None,
     parser: Callable[[str], Item] = parse,
 ) -> Select | SelectOfScalar:
     """A helper function to convert query to select statement.
@@ -218,11 +253,14 @@ def q_to_select(
         model (type[ModelType]): A SQLModel mode.
         relationships (dict[str, type[ModelType]  |  Relationship] | None, optional): SQLModel relationships. Defaults to None.
         entities (Any, optional): Entities for `select` function. Defaults to None.
+        default_fields (dict[str, FieldInfo] | None, optional): Default fields. Defaults to None.
         parser (Callable[[str], Item], optional): A Luqum's parse function. Defaults to parse.
 
     Returns:
         Select | SelectOfScalar: A select statement.
-    """  # noqa: E501
+    """
     parsed = parser(q)
-    builder: SelectBuilder = SelectBuilder(model, relationships=relationships)
+    builder: SelectBuilder = SelectBuilder(
+        model, relationships=relationships, default_fields=default_fields
+    )
     return builder(parsed, entities=entities)

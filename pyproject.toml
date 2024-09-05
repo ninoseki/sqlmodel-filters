@@ -1,34 +1,46 @@
-[tool.poetry]
+[project]
 name = "sqlmodel-filters"
-version = "0.0.0"
+dynamic = ["version"]
 description = "A Lucene query like filtering for SQLModel"
-authors = ["Manabu Niseki <manabu.niseki@gmail.com>"]
-license = "MIT"
 readme = "README.md"
+requires-python = ">=3.10,<4.0"
+license = "MIT"
+authors = [{ name = "Manabu Niseki", email = "manabu.niseki@gmail.com" }]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "luqum>=0.13,<0.14",
+    "sqlmodel>=0.0.16,<1.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-luqum = "^0.13"
-sqlmodel = ">=0.0.16,<1.0"
+[project.urls]
+Repository = "https://github.com/ninoseki/sqlmodel-filters"
 
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.9"
-pre-commit = "^3.7"
-pytest = "^8.1"
-pytest-pretty = "^1.2"
-pytest-randomly = "^3.15"
-pyupgrade = "^3.15"
-ruff = "^0.4"
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv]
+dev-dependencies = [
+    "mypy>=1.11.2,<2.0.0",
+    "pre-commit>=3.8.0,<4.0.0",
+    "pytest>=8.3.2,<9.0.0",
+    "pytest-pretty>=1.2,<2.0",
+    "pytest-randomly>=3.15,<4.0",
+    "pyupgrade>=3.17.0,<4.0.0",
+    "ruff>=0.6.3,<0.7.0",
+]
 
 [tool.poetry-dynamic-versioning]
 enable = true
-
-[build-system]
-requires = ["poetry-core", "poetry-dynamic-versioning"]
-build-backend = "poetry_dynamic_versioning.backend"
-
-[tool.ruff]
-line-length = 120
 
 [tool.ruff.lint]
 select = [
@@ -45,3 +57,4 @@ select = [
   "T20", # flake8-print
   "W",   # pycodestyle warnings
 ]
+ignore = ["E501"]
