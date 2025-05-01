@@ -7,6 +7,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,10 +17,6 @@ jobs:
           python-version: 3.11
           cache: "pip"
       - run: pip install -r requirements.txt
-      - name: build
-        run: uvx --from build pyproject-build
+      - run: uv build
       - name: publish
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uvx twine upload dist/*
+        uses: pypa/gh-action-pypi-publish@release/v1
