@@ -144,8 +144,15 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_unknown_operation(self, node: UnknownOperation):
-        for child in node.children:
-            yield from self.get_expressions(child)
+        # NOTE: Luqum emits UnknownOperation for space-separated terms (no
+        # explicit AND/OR). Join them with OR to match Lucene's default.
+        expressions = list(
+            itertools.chain.from_iterable(
+                [self.get_expressions(child) for child in node.children]
+            )
+        )
+        if len(expressions) > 0:
+            yield or_(*expressions)
 
     def visit_unknown_operation(self, node: UnknownOperation, context: dict):
         self.expressions.extend(list(self.get_expressions(node)))
@@ -174,7 +181,11 @@ class ExpressionsBuilder(TreeVisitor):
                     )
 
         wrapper = get_wrapper()
-        yield from wrapper.get_expressions()
+        # Bare words/phrases match any of the default fields, so OR the
+        # per-field expressions together.
+        expressions = list(wrapper.get_expressions())
+        if len(expressions) > 0:
+            yield or_(*expressions)
 
     def visit_term(self, node: Term, context: dict):
         parents: tuple[Any] = context.get("parents", ())
@@ -232,7 +243,10 @@ class SelectBuilder(ExpressionsBuilder):
                 s = s.join(relationship)
 
         if len(self.expressions) > 0:
-            return s.where(or_(*self.expressions))
+            # Top-level expressions come from distinct branches of the tree
+            # (each one already encodes its own internal boolean structure),
+            # so combine them with AND rather than OR.
+            return s.where(and_(*self.expressions))
 
         return s
 
