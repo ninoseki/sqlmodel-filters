@@ -515,3 +515,107 @@ def test_search_field_term_is_not_double_processed(builder: SelectBuilder):
         WHERE hero.name LIKE '%Spider-Boy%'
         """
     )
+
+
+@pytest.mark.parametrize(
+    ("q", "expected_names"),
+    [
+        ("name:(Spider-Boy OR Rusty-Man)", ["Spider-Boy", "Rusty-Man"]),
+        ("name:(Spider-Boy AND Rusty-Man)", []),
+        ("name:(Spider Rusty)", ["Spider-Boy", "Rusty-Man"]),
+        ("name:(NOT Spider-Boy)", ["Deadpond", "Rusty-Man"]),
+        ("name:(Spider-Boy OR Rusty-Man) AND age:48", ["Rusty-Man"]),
+        ("name:(Spider-Boy) OR age:48", ["Spider-Boy", "Rusty-Man"]),
+        ("name:((Spider OR Rusty) AND Boy)", ["Spider-Boy"]),
+    ],
+)
+def test_field_group(
+    builder: SelectBuilder,
+    session: Session,
+    q: str,
+    expected_names: list[str],
+):
+    tree = parse(q)
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert [hero.name for hero in heros] == expected_names
+
+
+def test_field_group_with_range(builder: SelectBuilder, session: Session):
+    tree = parse("age:([47 TO 50] OR >100)")
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert [hero.age for hero in heros] == [48]
+
+
+def test_field_group_inner_search_field_overrides_outer(
+    builder: SelectBuilder, session: Session
+):
+    # `name:(Spider OR age:48)` binds "Spider" to name but lets the inner
+    # `age:48` override the outer field — matches Lucene's documented
+    # semantics for a SearchField appearing inside a FieldGroup.
+    tree = parse("name:(Spider OR age:48)")
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert sorted(hero.name for hero in heros) == ["Rusty-Man", "Spider-Boy"]
+
+
+def test_field_group_or_sql(builder: SelectBuilder):
+    statement = builder(parse("name:(Spider OR Rusty)"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider%' OR hero.name LIKE '%Rusty%'
+        """
+    )
+
+
+def test_field_group_and_sql(builder: SelectBuilder):
+    statement = builder(parse("name:(Spider AND Boy)"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider%' AND hero.name LIKE '%Boy%'
+        """
+    )
+
+
+def test_field_group_override_sql(builder: SelectBuilder):
+    statement = builder(parse("name:(Spider OR age:48)"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider%' OR hero.age = 48
+        """
+    )
+
+
+def test_field_group_with_relationships(session: Session):
+    builder = SelectBuilder(
+        Hero,
+        relationships={"team": Team, "headquarter": Headquarter},  # type: ignore
+    )
+    tree = parse("team.name:(Preventers OR Z-Force)")
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert sorted(hero.name for hero in heros) == [
+        "Deadpond",
+        "Rusty-Man",
+        "Spider-Boy",
+    ]

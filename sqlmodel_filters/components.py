@@ -3,12 +3,27 @@ from functools import cached_property
 from types import MappingProxyType
 from typing import Annotated, Any, Generic, TypedDict, TypeVar
 
-from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
+from luqum.tree import (
+    AndOperation,
+    FieldGroup,
+    From,
+    Group,
+    Item,
+    Not,
+    OrOperation,
+    Phrase,
+    Range,
+    Regex,
+    SearchField,
+    To,
+    UnknownOperation,
+    Word,
+)
 from pydantic import TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, _JoinTargetArgument
-from sqlmodel import SQLModel, and_
+from sqlmodel import SQLModel, and_, not_, or_
 
 from .exceptions import IllegalFieldError, IllegalFilterError
 from .utils import dequote, deslash
@@ -194,6 +209,69 @@ class SearchFieldNode:
     def _regex_expression(self, regex: Regex):
         yield self.field.regexp_match(deslash(regex.value))
 
+    def _field_group_expressions(self, group: FieldGroup):
+        # A FieldGroup always wraps a single operation/leaf node.
+        yield from self._walk_group_body(group.children[0])
+
+    def _walk_group_body(self, node: Item):
+        # Recursively walk the body of a field group, rebinding each leaf
+        # term to the outer field name. Boolean operators inside the group
+        # drive the shape of the resulting SQL expression; a nested
+        # SearchField overrides the outer field (Lucene semantics).
+        match node:
+            case AndOperation():
+                yield from self._combine_group_children(node.children, and_)
+            case OrOperation() | UnknownOperation():
+                yield from self._combine_group_children(node.children, or_)
+            case Not():
+                yield from self._group_not(node)
+            case Group() | FieldGroup():
+                yield from self._walk_group_body(node.children[0])
+            case SearchField() as inner_sf:
+                yield from self._group_override(inner_sf)
+            case Word() | Phrase() | Range() | From() | To() | Regex():
+                yield from self._group_leaf(node)
+            case unknown:
+                raise IllegalFilterError(
+                    f"{unknown.__class__} is not supported inside a field group"
+                )
+
+    def _flatten_group_children(self, children):
+        for child in children:
+            yield from self._walk_group_body(child)
+
+    def _combine_group_children(self, children, combinator):
+        exprs = list(self._flatten_group_children(children))
+        if exprs:
+            yield combinator(*exprs)
+
+    def _group_not(self, node: Not):
+        exprs = list(self._flatten_group_children(node.children))
+        if exprs:
+            yield not_(and_(*exprs))
+
+    def _group_override(self, inner_sf: SearchField):
+        # Inner field overrides the outer one.
+        for inner_child in inner_sf.children:
+            sub = SearchFieldNode(
+                inner_child,
+                model=self.model_field.model,
+                name=inner_sf.name,
+                relationships=self.model_field.relationships,
+            )
+            yield from sub.get_expressions()
+
+    def _group_leaf(self, node: Item):
+        # Reuse the existing per-leaf expression logic by binding this
+        # leaf to the outer field name.
+        leaf = SearchFieldNode(
+            node,
+            model=self.model_field.model,
+            name=self.model_field.name,
+            relationships=self.model_field.relationships,
+        )
+        yield from leaf.get_expressions()
+
     def get_expressions(self):
         match self.node:
             case Phrase():
@@ -208,6 +286,8 @@ class SearchFieldNode:
                 yield from self._to_expression(self.node)
             case Regex():
                 yield from self._regex_expression(self.node)
+            case FieldGroup():
+                yield from self._field_group_expressions(self.node)
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
