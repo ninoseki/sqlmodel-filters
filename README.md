@@ -5,9 +5,6 @@
 
 A Lucene query like filter for [SQLModel](https://github.com/tiangolo/sqlmodel).
 
-> [!NOTE]
-> This is an alpha level library. Everything is subject to change & there are some known limitations.
-
 ## Installation
 
 ```bash
@@ -176,6 +173,20 @@ Note that the default conjunction is `OR`.
 | ------------------- | ------------------------------------------------- |
 | `name:Rusty age:48` | `WHERE hero.name LIKE '%Rusty%' OR hero.age = 48` |
 
+### Field Grouping
+
+Lucene's field grouping syntax `field:(A OR B)` applies the outer field name to each term inside the group:
+
+| Query                         | SQL (Where Clause)                                               |
+| ----------------------------- | ---------------------------------------------------------------- |
+| `name:(Spider OR Rusty)`      | `WHERE hero.name LIKE '%Spider%' OR hero.name LIKE '%Rusty%'`    |
+| `name:(Spider AND Boy)`       | `WHERE hero.name LIKE '%Spider%' AND hero.name LIKE '%Boy%'`     |
+| `name:(Spider Rusty)`         | `WHERE hero.name LIKE '%Spider%' OR hero.name LIKE '%Rusty%'`    |
+| `name:(NOT Spider)`           | `WHERE hero.name NOT LIKE '%Spider%'`                            |
+| `age:([47 TO 50] OR >100)`    | `WHERE (hero.age <= 50 AND hero.age >= 47) OR hero.age > 100`    |
+
+A `SearchField` nested inside a field group overrides the outer field name (matching Lucene's documented semantics), so `name:(Spider OR age:48)` compiles to `WHERE hero.name LIKE '%Spider%' OR hero.age = 48`.
+
 ### Relationship
 
 Set `relationships` (key-to-model mapping) to do filtering on relationship(s).
@@ -281,7 +292,3 @@ from sqlmodel_filters import q_to_select
 
 statement = q_to_select('name:"Spider-Boy"', Hero)
 ```
-
-## Known Limitations / Todos
-
-- Field Grouping is not supported
