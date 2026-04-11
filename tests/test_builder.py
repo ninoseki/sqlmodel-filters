@@ -619,3 +619,80 @@ def test_field_group_with_relationships(session: Session):
         "Rusty-Man",
         "Spider-Boy",
     ]
+
+
+def test_field_group_nested_override_with_relationship(session: Session):
+    # `name:(Spider OR team.name:(Preventers OR Z-Force))` — the inner
+    # SearchField both overrides the outer field and introduces its own
+    # FieldGroup. Exercises the mutual recursion through
+    # _group_override → SearchFieldNode → _field_group_expressions.
+    builder = SelectBuilder(
+        Hero,
+        relationships={"team": Team, "headquarter": Headquarter},  # type: ignore
+    )
+    tree = parse("name:(Spider OR team.name:(Preventers OR Z-Force))")
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    assert sorted(hero.name for hero in heros) == [
+        "Deadpond",
+        "Rusty-Man",
+        "Spider-Boy",
+    ]
+
+
+def test_field_group_three_level_nested_override_with_chained_relationship(
+    session: Session,
+):
+    # Three-level chained override:
+    #   name:(Spider OR team.name:(Preventers AND headquarter.name:(Sharp OR Sister)))
+    # Validates that field-group recursion composes with chained-
+    # relationship resolution at arbitrary depth.
+    builder = SelectBuilder(
+        Hero,
+        relationships={"team": Team, "headquarter": Headquarter},  # type: ignore
+    )
+    tree = parse(
+        "name:(Spider OR team.name:(Preventers AND headquarter.name:(Sharp OR Sister)))"
+    )
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    # Spider-Boy matches the outer "Spider" leg.
+    # Rusty-Man matches the inner Preventers AND Sharp leg.
+    # Deadpond's team is Z-Force (not Preventers) and name is not Spider.
+    assert sorted(hero.name for hero in heros) == ["Rusty-Man", "Spider-Boy"]
+
+
+def test_nested_top_level_group(builder: SelectBuilder, session: Session):
+    # `(((name:Spider OR name:Rusty) AND age:48) OR secret_name:Dive)` —
+    # nested Group nodes combining boolean operators at the top level
+    # (not a FieldGroup). Locks in the pre-existing Group handling.
+    tree = parse("(((name:Spider OR name:Rusty) AND age:48) OR secret_name:Dive)")
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    # Rusty-Man: matches (Spider|Rusty) AND age=48.
+    # Deadpond: secret_name "Dive Wilson" matches the Dive leg.
+    # Spider-Boy: name matches but age is NULL, not 48.
+    assert sorted(hero.name for hero in heros) == ["Deadpond", "Rusty-Man"]
+
+
+def test_top_level_group_with_relationship_subgroups(session: Session):
+    # `((name:Spider AND age:48) OR (team.name:Preventers AND headquarter.name:Sharp))`
+    # mixes two parenthesized branches joined by OR, one of which uses
+    # chained relationship fields.
+    builder = SelectBuilder(
+        Hero,
+        relationships={"team": Team, "headquarter": Headquarter},  # type: ignore
+    )
+    tree = parse(
+        "((name:Spider AND age:48) OR (team.name:Preventers AND headquarter.name:Sharp))"
+    )
+    statement = builder(tree)
+
+    heros = session.exec(statement).all()
+    # Rusty-Man and Spider-Boy are both on team Preventers at HQ Sharp.
+    # Neither matches name:Spider AND age:48 (Spider-Boy's age is NULL).
+    # Deadpond is on Z-Force, so he's excluded entirely.
+    assert sorted(hero.name for hero in heros) == ["Rusty-Man", "Spider-Boy"]
