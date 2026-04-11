@@ -4,7 +4,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Generic, TypedDict, TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, _JoinTargetArgument
@@ -232,7 +232,10 @@ class WordNode(BaseNode[Word]):
     def get_expressions(self):
         for name in self.default_fields:
             model_field = ModelField(self.model, name=name)
-            with contextlib.suppress(Exception):
+            # Skip fields the value can't be coerced into — bare words are
+            # tried against every default field, so type mismatches are
+            # expected and not an error.
+            with contextlib.suppress(AttributeError, ValidationError):
                 field = self.get_field(name)
 
                 if self.node.value == "*":
@@ -249,7 +252,8 @@ class PhraseNode(BaseNode[Phrase]):
     def get_expressions(self):
         for name in self.default_fields:
             model_field = ModelField(self.model, name=name)
-            with contextlib.suppress(Exception):
+            # See WordNode.get_expressions for rationale.
+            with contextlib.suppress(AttributeError, ValidationError):
                 field = self.get_field(name)
                 casted = model_field.cast(dequote(self.node.value))
                 yield field == casted
