@@ -24,7 +24,9 @@ class Relationship(TypedDict):
     model: SQLModel
 
 
-def relationship_to_model(relationship: Relationship | type[ModelType]) -> type[ModelType]:
+def relationship_to_model(
+    relationship: Relationship | type[ModelType],
+) -> type[ModelType]:
     if isinstance(relationship, dict):
         return relationship["model"]  # type: ignore
 
@@ -71,7 +73,8 @@ class ModelField:
         model: type[ModelType],
         name: str,
         *,
-        relationships: MappingProxyType[str, Relationship | type[ModelType]] | None = None,
+        relationships: MappingProxyType[str, Relationship | type[ModelType]]
+        | None = None,
     ):
         self.name = name
         self.model = model
@@ -105,14 +108,18 @@ class ModelField:
         try:
             return relationship_to_model(self.relationships[relationship_name])
         except KeyError as e:
-            raise IllegalFieldError(f"{model.__name__} does not have field:{relationship_name}") from e
+            raise IllegalFieldError(
+                f"{model.__name__} does not have field:{relationship_name}"
+            ) from e
 
     @property
     def field(self) -> InstrumentedAttribute:
         try:
             return getattr(self.chained_model, self.last_name)
         except AttributeError as e:
-            raise IllegalFieldError(f"{self.chained_model.__name__} does not have field:{self.last_name}") from e
+            raise IllegalFieldError(
+                f"{self.chained_model.__name__} does not have field:{self.last_name}"
+            ) from e
 
     @cached_property
     def field_info(self) -> FieldInfo:
@@ -206,7 +213,13 @@ class SearchFieldNode:
 
 
 class BaseNode(Generic[NodeType]):
-    def __init__(self, node: NodeType, *, model: type[ModelType], default_fields: dict[str, FieldInfo] | None = None):
+    def __init__(
+        self,
+        node: NodeType,
+        *,
+        model: type[ModelType],
+        default_fields: dict[str, FieldInfo] | None = None,
+    ):
         self.node = node
         self.model = model
         self.default_fields = default_fields or model.model_fields
