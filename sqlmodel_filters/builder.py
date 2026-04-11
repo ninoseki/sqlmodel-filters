@@ -62,7 +62,7 @@ class ExpressionsBuilder(TreeVisitor):
     def get_expressions(self, node: Item):
         match node:
             case SearchField():
-                yield from self._handel_search_field(node)
+                yield from self._handle_search_field(node)
             case Not():
                 yield from self._handle_not(node)
             case Group():
@@ -76,7 +76,7 @@ class ExpressionsBuilder(TreeVisitor):
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
-    def _handel_search_field(self, node: SearchField):
+    def _handle_search_field(self, node: SearchField):
         pos = node.pos or -1
         if self.is_analyzed(pos):
             return
