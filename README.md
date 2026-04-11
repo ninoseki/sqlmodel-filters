@@ -5,9 +5,6 @@
 
 A Lucene query like filter for [SQLModel](https://github.com/tiangolo/sqlmodel).
 
-> [!NOTE]
-> This is an alpha level library. Everything is subject to change & there are some known limitations.
-
 ## Installation
 
 ```bash
