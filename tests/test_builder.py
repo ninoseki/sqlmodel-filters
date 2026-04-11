@@ -5,6 +5,7 @@ from luqum.thread import parse
 from sqlmodel import Session, distinct, func, select
 
 from sqlmodel_filters import SelectBuilder, q_to_select
+from sqlmodel_filters.exceptions import IllegalFilterError
 
 from .models import Headquarter, Hero, Post, Tag, Team
 from .utils import compile_with_literal_binds, normalize_multiline_string
@@ -441,3 +442,76 @@ def test_m2m_count_with_isouter(session: Session):
     tree = parse("id:*")
     statement = builder(tree, entities=[func.count(Post.id)])  # type: ignore
     assert session.scalar(statement) == session.exec(func.count(Post.id)).scalar()  # type: ignore
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "Spider AND name:Rusty-Man",
+        "name:Rusty-Man AND Spider",
+        "Spider OR Rusty",
+        "Spider Rusty",
+        "NOT Spider",
+    ],
+)
+def test_bare_term_inside_operation_raises(builder: SelectBuilder, q: str):
+    # Bare Word/Phrase terms nested inside AND/OR/NOT/UnknownOperation are
+    # not supported: the operation handler recursively calls get_expressions
+    # on children, and Word/Phrase are rejected there. Locking this in so
+    # the error is raised loudly rather than producing an empty-WHERE query.
+    tree = parse(q)
+    with pytest.raises(IllegalFilterError):
+        builder(tree)
+
+
+def test_default_fields_with_word_emits_or_across_string_fields(
+    builder: SelectBuilder,
+):
+    # `Spider` is a bare word with no SearchField, so it should be matched
+    # against every default string field joined by OR (inside a single
+    # top-level clause). Non-string fields whose casts fail are skipped.
+    statement = builder(parse("Spider"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider%' OR hero.secret_name LIKE '%Spider%'
+        """
+    )
+
+
+def test_unknown_operation_joins_children_with_or(builder: SelectBuilder):
+    # Space-separated SearchField terms form an UnknownOperation; the
+    # handler now wraps the children in OR (matching Lucene's default
+    # operator) instead of leaking them as individual top-level entries.
+    statement = builder(parse("name:Spider age:48"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider%' OR hero.age = 48
+        """
+    )
+
+
+def test_search_field_term_is_not_double_processed(builder: SelectBuilder):
+    # A Term nested inside a SearchField must be handled only by
+    # visit_search_field — visit_term's parent-type check is what prevents
+    # the inner Word from also being matched against the default fields.
+    statement = builder(parse("name:Spider-Boy"))
+
+    assert normalize_multiline_string(
+        str(compile_with_literal_binds(statement))  # type: ignore
+    ) == normalize_multiline_string(
+        """
+        SELECT hero.id, hero.name, hero.secret_name, hero.age, hero.created_at, hero.team_id
+        FROM hero
+        WHERE hero.name LIKE '%Spider-Boy%'
+        """
+    )

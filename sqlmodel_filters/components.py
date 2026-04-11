@@ -4,7 +4,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Generic, TypedDict, TypeVar
 
 from luqum.tree import From, Item, Phrase, Range, Regex, To, Word
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, _JoinTargetArgument
@@ -24,7 +24,9 @@ class Relationship(TypedDict):
     model: SQLModel
 
 
-def relationship_to_model(relationship: Relationship | type[ModelType]) -> type[ModelType]:
+def relationship_to_model(
+    relationship: Relationship | type[ModelType],
+) -> type[ModelType]:
     if isinstance(relationship, dict):
         return relationship["model"]  # type: ignore
 
@@ -71,7 +73,8 @@ class ModelField:
         model: type[ModelType],
         name: str,
         *,
-        relationships: MappingProxyType[str, Relationship | type[ModelType]] | None = None,
+        relationships: MappingProxyType[str, Relationship | type[ModelType]]
+        | None = None,
     ):
         self.name = name
         self.model = model
@@ -105,14 +108,18 @@ class ModelField:
         try:
             return relationship_to_model(self.relationships[relationship_name])
         except KeyError as e:
-            raise IllegalFieldError(f"{model.__name__} does not have field:{relationship_name}") from e
+            raise IllegalFieldError(
+                f"{model.__name__} does not have field:{relationship_name}"
+            ) from e
 
     @property
     def field(self) -> InstrumentedAttribute:
         try:
             return getattr(self.chained_model, self.last_name)
         except AttributeError as e:
-            raise IllegalFieldError(f"{self.chained_model.__name__} does not have field:{self.last_name}") from e
+            raise IllegalFieldError(
+                f"{self.chained_model.__name__} does not have field:{self.last_name}"
+            ) from e
 
     @cached_property
     def field_info(self) -> FieldInfo:
@@ -206,7 +213,13 @@ class SearchFieldNode:
 
 
 class BaseNode(Generic[NodeType]):
-    def __init__(self, node: NodeType, *, model: type[ModelType], default_fields: dict[str, FieldInfo] | None = None):
+    def __init__(
+        self,
+        node: NodeType,
+        *,
+        model: type[ModelType],
+        default_fields: dict[str, FieldInfo] | None = None,
+    ):
         self.node = node
         self.model = model
         self.default_fields = default_fields or model.model_fields
@@ -219,7 +232,10 @@ class WordNode(BaseNode[Word]):
     def get_expressions(self):
         for name in self.default_fields:
             model_field = ModelField(self.model, name=name)
-            with contextlib.suppress(Exception):
+            # Skip fields the value can't be coerced into — bare words are
+            # tried against every default field, so type mismatches are
+            # expected and not an error.
+            with contextlib.suppress(AttributeError, ValidationError):
                 field = self.get_field(name)
 
                 if self.node.value == "*":
@@ -236,7 +252,8 @@ class PhraseNode(BaseNode[Phrase]):
     def get_expressions(self):
         for name in self.default_fields:
             model_field = ModelField(self.model, name=name)
-            with contextlib.suppress(Exception):
+            # See WordNode.get_expressions for rationale.
+            with contextlib.suppress(AttributeError, ValidationError):
                 field = self.get_field(name)
                 casted = model_field.cast(dequote(self.node.value))
                 yield field == casted

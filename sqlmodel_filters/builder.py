@@ -1,4 +1,3 @@
-import contextlib
 import itertools
 from collections.abc import Callable
 from types import MappingProxyType
@@ -61,11 +60,8 @@ class ExpressionsBuilder(TreeVisitor):
 
     def get_expressions(self, node: Item):
         match node:
-            case Word():
-                pass
-                # yield from self._handle_word(node)
             case SearchField():
-                yield from self._handel_search_field(node)
+                yield from self._handle_search_field(node)
             case Not():
                 yield from self._handle_not(node)
             case Group():
@@ -79,7 +75,7 @@ class ExpressionsBuilder(TreeVisitor):
             case unknown:
                 raise IllegalFilterError(f"{unknown.__class__} is not supported yet")
 
-    def _handel_search_field(self, node: SearchField):
+    def _handle_search_field(self, node: SearchField):
         pos = node.pos or -1
         if self.is_analyzed(pos):
             return
@@ -144,8 +140,15 @@ class ExpressionsBuilder(TreeVisitor):
         yield from super().generic_visit(node, context)
 
     def _handle_unknown_operation(self, node: UnknownOperation):
-        for child in node.children:
-            yield from self.get_expressions(child)
+        # NOTE: Luqum emits UnknownOperation for space-separated terms (no
+        # explicit AND/OR). Join them with OR to match Lucene's default.
+        expressions = list(
+            itertools.chain.from_iterable(
+                [self.get_expressions(child) for child in node.children]
+            )
+        )
+        if len(expressions) > 0:
+            yield or_(*expressions)
 
     def visit_unknown_operation(self, node: UnknownOperation, context: dict):
         self.expressions.extend(list(self.get_expressions(node)))
@@ -174,18 +177,19 @@ class ExpressionsBuilder(TreeVisitor):
                     )
 
         wrapper = get_wrapper()
-        yield from wrapper.get_expressions()
+        # Bare words/phrases match any of the default fields, so OR the
+        # per-field expressions together.
+        expressions = list(wrapper.get_expressions())
+        if len(expressions) > 0:
+            yield or_(*expressions)
 
     def visit_term(self, node: Term, context: dict):
-        parents: tuple[Any] = context.get("parents", ())
-        is_top_level = len(parents) == 0
-
-        if not is_top_level:
-            with contextlib.suppress(Exception):
-                last = parents[-1][-1]
-                is_top_level = last == node
-
-        if is_top_level:
+        parents: tuple[Item, ...] = context.get("parents", ())
+        # Terms nested inside a SearchField are handled by visit_search_field
+        # (which resolves the field name); here we only process bare
+        # Word/Phrase terms that are matched against the default fields.
+        inside_search_field = any(isinstance(p, SearchField) for p in parents)
+        if not inside_search_field:
             self.expressions.extend(list(self._handle_top_level_term(node)))
 
         yield from super().generic_visit(node, context)
@@ -232,7 +236,10 @@ class SelectBuilder(ExpressionsBuilder):
                 s = s.join(relationship)
 
         if len(self.expressions) > 0:
-            return s.where(or_(*self.expressions))
+            # Top-level expressions come from distinct branches of the tree
+            # (each one already encodes its own internal boolean structure),
+            # so combine them with AND rather than OR.
+            return s.where(and_(*self.expressions))
 
         return s
 
