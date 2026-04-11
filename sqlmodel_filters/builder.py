@@ -61,9 +61,6 @@ class ExpressionsBuilder(TreeVisitor):
 
     def get_expressions(self, node: Item):
         match node:
-            case Word():
-                pass
-                # yield from self._handle_word(node)
             case SearchField():
                 yield from self._handel_search_field(node)
             case Not():
