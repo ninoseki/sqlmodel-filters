@@ -58,6 +58,13 @@ class ExpressionsBuilder(TreeVisitor):
     def update_analyzed_positions(self, pos: int):
         self._analyzed_positions.add(pos)
 
+    @staticmethod
+    def _is_inside_search_field(context: dict) -> bool:
+        # Nodes nested inside a SearchField are owned by _handle_search_field;
+        # every other visit_* path must skip them to avoid double processing.
+        parents: tuple[Item, ...] = context.get("parents", ())
+        return any(isinstance(p, SearchField) for p in parents)
+
     def get_expressions(self, node: Item):
         match node:
             case SearchField():
@@ -92,7 +99,8 @@ class ExpressionsBuilder(TreeVisitor):
             yield from wrapper.get_expressions()
 
     def visit_search_field(self, node: SearchField, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
+        if not self._is_inside_search_field(context):
+            self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_group(self, node: Group):
@@ -109,7 +117,8 @@ class ExpressionsBuilder(TreeVisitor):
             yield and_(*expressions)
 
     def visit_and_operation(self, node: AndOperation, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
+        if not self._is_inside_search_field(context):
+            self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_or_operation(self, node: OrOperation):
@@ -123,7 +132,8 @@ class ExpressionsBuilder(TreeVisitor):
             yield or_(first, *others)
 
     def visit_or_operation(self, node: OrOperation, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
+        if not self._is_inside_search_field(context):
+            self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_not(self, node: Not):
@@ -136,7 +146,8 @@ class ExpressionsBuilder(TreeVisitor):
             yield not_(*expressions)
 
     def visit_not(self, node: Not, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
+        if not self._is_inside_search_field(context):
+            self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_unknown_operation(self, node: UnknownOperation):
@@ -151,7 +162,8 @@ class ExpressionsBuilder(TreeVisitor):
             yield or_(*expressions)
 
     def visit_unknown_operation(self, node: UnknownOperation, context: dict):
-        self.expressions.extend(list(self.get_expressions(node)))
+        if not self._is_inside_search_field(context):
+            self.expressions.extend(list(self.get_expressions(node)))
         yield from super().generic_visit(node, context)
 
     def _handle_top_level_term(self, node: Term):
@@ -184,12 +196,10 @@ class ExpressionsBuilder(TreeVisitor):
             yield or_(*expressions)
 
     def visit_term(self, node: Term, context: dict):
-        parents: tuple[Item, ...] = context.get("parents", ())
         # Terms nested inside a SearchField are handled by visit_search_field
         # (which resolves the field name); here we only process bare
         # Word/Phrase terms that are matched against the default fields.
-        inside_search_field = any(isinstance(p, SearchField) for p in parents)
-        if not inside_search_field:
+        if not self._is_inside_search_field(context):
             self.expressions.extend(list(self._handle_top_level_term(node)))
 
         yield from super().generic_visit(node, context)
