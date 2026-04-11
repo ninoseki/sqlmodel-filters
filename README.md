@@ -295,7 +295,3 @@ from sqlmodel_filters import q_to_select
 
 statement = q_to_select('name:"Spider-Boy"', Hero)
 ```
-
-## Known Limitations / Todos
-
-- Field Grouping is not supported
