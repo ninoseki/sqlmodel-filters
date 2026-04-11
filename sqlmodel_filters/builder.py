@@ -1,4 +1,3 @@
-import contextlib
 import itertools
 from collections.abc import Callable
 from types import MappingProxyType
@@ -185,15 +184,12 @@ class ExpressionsBuilder(TreeVisitor):
             yield or_(*expressions)
 
     def visit_term(self, node: Term, context: dict):
-        parents: tuple[Any] = context.get("parents", ())
-        is_top_level = len(parents) == 0
-
-        if not is_top_level:
-            with contextlib.suppress(Exception):
-                last = parents[-1][-1]
-                is_top_level = last == node
-
-        if is_top_level:
+        parents: tuple[Item, ...] = context.get("parents", ())
+        # Terms nested inside a SearchField are handled by visit_search_field
+        # (which resolves the field name); here we only process bare
+        # Word/Phrase terms that are matched against the default fields.
+        inside_search_field = any(isinstance(p, SearchField) for p in parents)
+        if not inside_search_field:
             self.expressions.extend(list(self._handle_top_level_term(node)))
 
         yield from super().generic_visit(node, context)
